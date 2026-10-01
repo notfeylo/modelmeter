@@ -1,7 +1,5 @@
 # Tallybeam
 
-![Tallybeam logo](tallybeam/static/logo.svg)
-
 A desktop-local dashboard for token usage across AI coding tools. It reads usage metadata from Claude Code, Codex CLI, Gemini CLI, and OpenCode sessions, and accepts CSV usage exports for Grok/xAI or other providers. The interface starts in a dark grey theme and uses Space Grotesk.
 
 ## Features
