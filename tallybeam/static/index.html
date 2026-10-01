@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tallybeam · AI usage in one view</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="Main navigation">
+      <a class="brand" href="/" aria-label="Tallybeam home"><img src="/logo.svg" alt=""><span>Tallybeam</span></a>
+      <div class="rail-label">Workspace</div>
+      <button class="nav active" data-panel="overview"><span class="nav-icon">◫</span> Overview</button>
+      <button class="nav" data-panel="sessions"><span class="nav-icon">◷</span> Sessions</button>
+      <button class="nav" data-panel="connections"><span class="nav-icon">⌘</span> Connections</button>
+      <div class="rail-bottom"><span class="local-dot"></span><div><strong>Private by design</strong><small>Runs on your computer</small></div></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="breadcrumbs">Workspace <span>/</span> <strong id="breadcrumb">Overview</strong></div><div class="top-actions"><span id="updated">Loading data…</span><button class="icon-button" id="refresh" title="Refresh data" aria-label="Refresh data">↻</button></div></header>
+      <section id="overview-panel" class="panel active">
+        <div class="hero"><div><div class="hero-kicker"><span class="signal"></span> Your AI usage, together</div><h1>See the whole picture.</h1><p>One calm place for the tokens your coding tools record.</p></div><div class="hero-side"><div class="hero-side-label">Connected sources</div><div class="hero-side-value" id="source-count">—</div><div class="hero-side-note">Local session data only</div></div></div>
+        <div class="toolbar"><div class="segmented" role="group" aria-label="Date range"><button data-days="7">7 days</button><button data-days="30" class="selected">30 days</button><button data-days="90">90 days</button><button data-days="365">1 year</button></div><select id="provider-filter" aria-label="Filter provider"><option value="all">All providers</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="gemini">Gemini</option><option value="grok">Grok</option></select></div>
+        <div id="empty" class="empty hidden"><div class="empty-mark">◫</div><h2>No token records yet</h2><p>Connect a local coding tool or import usage from a CSV file to start seeing your activity.</p><button class="primary" data-panel="connections">Set up connections</button></div>
+        <div id="dashboard">
+          <div class="metrics"><article class="metric"><span>Tokens in range</span><strong id="metric-total">—</strong><small>Recorded across connected sources</small></article><article class="metric"><span>Today</span><strong id="metric-today">—</strong><small>Since midnight UTC</small></article><article class="metric"><span>Daily average</span><strong id="metric-average">—</strong><small>For the selected range</small></article><article class="metric"><span>Recorded responses</span><strong id="metric-messages">—</strong><small>Usage events with token data</small></article></div>
+          <div class="grid top-grid"><article class="card heat-card"><div class="card-heading"><div><h2>Activity map</h2><p>Hourly token volume</p></div><span class="card-note">UTC</span></div><div id="heatmap" class="heatmap" aria-label="Hourly activity heatmap"></div><div class="heat-key">Less <i></i><i></i><i></i><i></i><i></i> More</div></article><article class="card"><div class="card-heading"><div><h2>Token mix</h2><p>How recorded tokens are used</p></div></div><div class="mix-layout"><div class="donut" id="mix-donut"><div><strong id="mix-total">—</strong><span>tokens</span></div></div><div id="mix-legend" class="legend"></div></div></article></div>
+          <article class="card trend-card"><div class="card-heading"><div><h2>Daily trend</h2><p>Token use through the selected period</p></div><div class="chart-total" id="trend-total">—</div></div><div id="trend-chart" class="trend-chart" role="img" aria-label="Daily token usage chart"></div></article>
+          <div class="grid lower-grid"><article class="card"><div class="card-heading"><div><h2>Models in rotation</h2><p>Your most used models</p></div></div><div id="models" class="model-list"></div></article><article class="card"><div class="card-heading"><div><h2>Provider share</h2><p>Share of recorded tokens</p></div></div><div id="providers" class="provider-list"></div></article></div>
+          <article class="card limits-card"><div class="card-heading"><div><h2>Available limits</h2><p>Only limits reported by a connected tool appear here</p></div></div><div id="limits"></div></article>
+        </div>
+      </section>
+      <section id="sessions-panel" class="panel"><div class="page-title"><h1>Sessions</h1><p>Recent usage grouped by local session ID. Prompts and responses are not stored or displayed.</p></div><div class="card table-card"><div class="table-scroll"><table><thead><tr><th>Provider / model</th><th>Last activity</th><th>Events</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th></tr></thead><tbody id="session-rows"></tbody></table></div></div></section>
+      <section id="connections-panel" class="panel"><div class="page-title"><h1>Connections</h1><p>Enable sources on this computer. Tallybeam reads usage metadata from saved sessions and never uploads it.</p></div><div id="connection-list" class="connection-grid"></div><div class="card import-card"><div><h2>Import other usage</h2><p>Bring in Grok/xAI or another provider with a CSV export. Required columns: provider, model, timestamp, input, output. Optional: cache_read, cache_write, session, id.</p><p class="fine">Use provider names Claude, Codex, Gemini, Grok, or Other. Imports stay in a local SQLite database.</p></div><label class="upload-button">Choose CSV<input id="csv-input" type="file" accept=".csv,text/csv" hidden></label></div><div class="honesty"><strong>About remaining tokens</strong><p>Usage totals and subscription limits are different. Codex CLI can expose rate-limit percentages and reset times in local records. Claude, Gemini, and Grok do not expose a shared consumer subscription balance through these local sources, so Tallybeam leaves that value unavailable.</p></div></section>
+      <footer>Local dashboard · Usage numbers come from saved session metadata and your CSV imports.</footer>
+    </main>
+  </div>
+  <dialog id="session-dialog"><div class="dialog-head"><div><h2 id="detail-title">Session details</h2><p id="detail-subtitle"></p></div><button id="close-dialog" aria-label="Close session details">×</button></div><div class="detail-body"><div class="detail-stats" id="detail-stats"></div><div id="detail-chart" class="trend-chart detail-chart" role="img" aria-label="Cumulative session token chart"></div><div class="table-scroll"><table><thead><tr><th>Time</th><th>Model</th><th>Input</th><th>Output</th><th>Cache read</th><th>Total</th></tr></thead><tbody id="detail-rows"></tbody></table></div></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body></html>

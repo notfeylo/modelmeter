@@ -1,0 +1,6 @@
+[package]
+name = "tallybeam-indexer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Fast local session file discovery for Tallybeam"
