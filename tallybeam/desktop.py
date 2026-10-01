@@ -1,66 +1,99 @@
-"""Windows tray launcher for the locally hosted dashboard."""
+"""Native Windows window for the locally hosted dashboard."""
 from __future__ import annotations
 
-import json
+import ctypes
+import sys
 import threading
-import webbrowser
+import time
 from importlib.resources import files
-from urllib.request import urlopen
 
 from .app import Handler, LocalHTTPServer
 
 
-def existing_dashboard(port=8765):
-    """Open an already running copy only after checking its identity."""
-    url = f"http://127.0.0.1:{port}"
+WINDOW_TITLE = "Tallybeam"
+MUTEX_NAME = "Local\\TallybeamDesktop"
+
+
+def create_server(preferred_port=8765):
+    """Keep desktop and command-line instances independent when needed."""
     try:
-        with urlopen(f"{url}/api/health", timeout=1) as response:
-            health = json.load(response)
-        if health.get("ok") is True and health.get("service") == "tallybeam":
-            return url
-    except (OSError, ValueError, TypeError):
-        pass
-    return None
+        return LocalHTTPServer(("127.0.0.1", preferred_port), Handler)
+    except OSError:
+        return LocalHTTPServer(("127.0.0.1", 0), Handler)
+
+
+def _focus_existing_window():
+    user32 = ctypes.windll.user32
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    for _ in range(20):
+        handle = user32.FindWindowW(None, WINDOW_TITLE)
+        if handle:
+            user32.ShowWindow(handle, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(handle)
+            return
+        time.sleep(0.1)
+
+
+def _single_instance_handle():
+    """Return a live Windows mutex handle, or focus the existing app."""
+    if sys.platform != "win32":
+        return None, True
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        _focus_existing_window()
+        _close_mutex(handle)
+        return None, False
+    return handle, True
+
+
+def _close_mutex(handle):
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle(handle)
 
 
 def main():
-    from PIL import Image
-    from pystray import Icon, Menu, MenuItem
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication, QMainWindow
+    from PySide6.QtWebEngineWidgets import QWebEngineView
 
+    mutex, should_launch = _single_instance_handle()
+    if not should_launch:
+        return
+
+    server = None
     try:
-        server = LocalHTTPServer(("127.0.0.1", 8765), Handler)
-    except OSError:
-        existing = existing_dashboard()
-        if existing:
-            webbrowser.open(existing)
-            return
-        server = LocalHTTPServer(("127.0.0.1", 0), Handler)
+        server = create_server()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
 
-    url = f"http://127.0.0.1:{server.server_port}"
-    with (files("tallybeam") / "static" / "tray.png").open("rb") as image_file:
-        image = Image.open(image_file).copy()
-
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-
-    def quit_app(icon, _item):
-        server.shutdown()
-        icon.stop()
-
-    icon = Icon(
-        "Tallybeam", image, "Tallybeam",
-        Menu(MenuItem("Open dashboard", lambda _icon, _item: webbrowser.open(url), default=True),
-             MenuItem("Quit Tallybeam", quit_app)),
-    )
-
-    def ready(current_icon):
-        current_icon.visible = True
-        webbrowser.open(url)
-
-    try:
-        icon.run(setup=ready)
+        app = QApplication(sys.argv)
+        app.setApplicationName(WINDOW_TITLE)
+        window = QMainWindow()
+        window.setWindowTitle(WINDOW_TITLE)
+        window.setWindowIcon(QIcon(str(files("tallybeam") / "static" / "tray.png")))
+        view = QWebEngineView(window)
+        window.setCentralWidget(view)
+        window.setMinimumSize(800, 560)
+        available = window.screen().availableGeometry()
+        window.resize(min(1280, available.width()), min(900, available.height()))
+        window.show()
+        view.load(QUrl(f"http://127.0.0.1:{server.server_port}/"))
+        app.exec()
     finally:
-        server.shutdown()
-        server.server_close()
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if mutex is not None:
+            _close_mutex(mutex)
 
 
 if __name__ == "__main__":

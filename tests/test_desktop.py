@@ -2,7 +2,7 @@ import threading
 import unittest
 
 from tallybeam.app import Handler, LocalHTTPServer
-from tallybeam.desktop import existing_dashboard
+from tallybeam.desktop import create_server
 
 
 class DesktopTests(unittest.TestCase):
@@ -11,7 +11,9 @@ class DesktopTests(unittest.TestCase):
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
-            self.assertEqual(existing_dashboard(server.server_port), f"http://127.0.0.1:{server.server_port}")
+            desktop_server = create_server(server.server_port)
+            self.assertNotEqual(desktop_server.server_port, server.server_port)
+            desktop_server.server_close()
             with self.assertRaises(OSError):
                 LocalHTTPServer(("127.0.0.1", server.server_port), Handler)
         finally:

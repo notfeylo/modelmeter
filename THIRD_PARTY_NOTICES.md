@@ -4,7 +4,7 @@ The dashboard layout, chart components, styling patterns, and cache lifecycle pr
 
 Space Grotesk is distributed through `@fontsource-variable/space-grotesk`; other frontend dependencies and licenses are recorded in `frontend/package-lock.json`.
 
-The Windows application bundles Python, Pillow, pystray, and the PyInstaller bootloader. Their licenses and source are available from [Python](https://www.python.org/downloads/), [Pillow](https://github.com/python-pillow/Pillow), [pystray](https://github.com/moses-palmer/pystray), and [PyInstaller](https://github.com/pyinstaller/pyinstaller). The build script and Tallybeam source needed to rebuild the installer are included in this repository.
+The Windows application bundles Python, PySide6/Qt WebEngine, and the PyInstaller bootloader. Pillow is used to generate the icon at build time. Their licenses and source are available from [Python](https://www.python.org/downloads/), [Qt for Python](https://doc.qt.io/qtforpython-6), [Qt WebEngine licensing and Chromium notices](https://doc.qt.io/qt-6/qtwebengine-licensing.html), [Pillow](https://github.com/python-pillow/Pillow), and [PyInstaller](https://github.com/pyinstaller/pyinstaller). Qt for Python and Qt WebEngine are distributed under the LGPLv3/GPLv3 or commercial terms; this installer uses the open-source packages. The build script and Tallybeam source needed to rebuild the installer are included in this repository.
 
 ## MIT license for adapted upstream code
 

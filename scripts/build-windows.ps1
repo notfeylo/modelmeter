@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.2.0",
+    [string]$Version = "0.3.0",
     [string]$Iscc = "",
     [string]$Python = "python"
 )
@@ -18,8 +18,15 @@ try {
     & $Python scripts/make_icon.py
     if ($LASTEXITCODE -ne 0) { throw "Icon generation failed" }
 
-    & $Python -m PyInstaller --noconfirm --clean --windowed --onedir --name Tallybeam --specpath build --icon "$root\assets\tallybeam.ico" --add-data "$root\tallybeam\static;tallybeam/static" --collect-all pystray "$root\desktop_entry.py"
+    & $Python -m PyInstaller --noconfirm --clean --windowed --onedir --name Tallybeam --specpath build --icon "$root\assets\tallybeam.ico" --add-data "$root\tallybeam\static;tallybeam/static" "$root\desktop_entry.py"
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+
+    # PyInstaller can resolve Windows' icuuc.dll to an unrelated ICU build on PATH
+    # (for example Poppler). QtCore expects the Windows system ICU exports.
+    foreach ($name in @("icuuc.dll", "icudt78.dll")) {
+        $bundledIcu = Join-Path $root "dist\Tallybeam\_internal\$name"
+        if (Test-Path -LiteralPath $bundledIcu) { Remove-Item -LiteralPath $bundledIcu }
+    }
 
     if (-not $Iscc) {
         $found = Get-Command ISCC.exe -ErrorAction SilentlyContinue
