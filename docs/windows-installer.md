@@ -18,4 +18,6 @@ The script installs frontend packages from the lockfile, builds the UI, renders 
 
 Before publishing a version, run Python tests, frontend lint and audit, and the Windows build. Install the setup file on Windows, launch the installed Start Menu shortcut, verify `/api/health` and the dashboard, launch the shortcut again to confirm it reopens one running instance, then quit from the tray. Publish the exact tested setup file and its SHA-256 hash in the GitHub release. Release tags and installer versions should match.
 
+On updates, quit the running app from the tray before starting Setup. If Setup detects a running Tallybeam instance, its default **Automatically close the applications** choice is the intended path; click **Next**. Inno Setup deliberately asks before closing an active application during an interactive install.
+
 The installer currently has no code-signing certificate. Windows SmartScreen may prompt on download or first launch. Do not claim publisher verification or bypass security controls in the installer.
