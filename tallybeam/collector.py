@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sqlite3
+from hashlib import blake2b
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -83,6 +84,34 @@ def source_files(root, suffix):
     return list(root.rglob("*" + suffix)) if root.exists() else []
 
 
+def source_signature(enabled=None, roots=None):
+    """Fingerprint local data and OpenCode WAL files without reading their contents."""
+    enabled = list(SOURCES) if enabled is None else enabled
+    roots = roots or SOURCES
+    digest = blake2b(digest_size=16)
+    for source in sorted(enabled):
+        digest.update(source.encode())
+        root = Path(os.environ["OPENCODE_DB_PATH"]).expanduser() if source == "opencode" and os.environ.get("OPENCODE_DB_PATH") else Path(roots.get(source, SOURCES[source]))
+        if source == "opencode":
+            paths = [root] if root.is_file() else source_files(root, ".db")
+            paths = [p for p in paths if (root.is_file() and p == root) or
+                     (p.name.startswith("opencode") and p.name != "opencode-auth.db")]
+            paths += [Path(str(path) + "-wal") for path in paths]
+        else:
+            suffix = ".json" if source == "gemini" else ".jsonl"
+            paths = source_files(root, suffix)
+            if source == "gemini":
+                paths = [p for p in paths if p.name.startswith("session-")]
+        for path in sorted(paths):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            digest.update(str(path).encode("utf-8", errors="replace"))
+            digest.update(f":{stat.st_size}:{stat.st_mtime_ns}".encode())
+    return digest.digest()
+
+
 def scan_claude(root):
     results = []
     for path in source_files(root, ".jsonl"):
@@ -156,8 +185,10 @@ def scan_gemini(root):
 def scan_opencode(root):
     """Read OpenCode V1/V2 assistant usage from a read-only SQLite connection."""
     results = []
-    for path in source_files(root, ".db"):
-        if not path.name.startswith("opencode") or path.name == "opencode-auth.db":
+    explicit = os.environ.get("OPENCODE_DB_PATH")
+    paths = [Path(explicit).expanduser()] if explicit else source_files(root, ".db")
+    for path in paths:
+        if (not explicit and not path.name.startswith("opencode")) or path.name == "opencode-auth.db":
             continue
         try:
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
@@ -167,21 +198,68 @@ def scan_opencode(root):
                     continue
                 table = max(candidates, key=lambda t: db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])
                 columns = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
-                fields = "id, session_id, data" if "session_id" in columns else None
-                if not fields:
+                if not {"id", "session_id", "data"}.issubset(columns):
                     continue
+                session_info = {}
+                for session_table in ("session", "session_v2"):
+                    if session_table not in tables:
+                        continue
+                    session_columns = {r[1] for r in db.execute(f"PRAGMA table_info({session_table})")}
+                    if "id" not in session_columns:
+                        continue
+                    selected = [col if col in session_columns else "NULL" for col in ("directory", "parent_id")]
+                    for sid, directory, parent in db.execute(
+                        f"SELECT id, {', '.join(selected)} FROM {session_table}"
+                    ):
+                        session_info[sid] = {"directory": directory, "child": parent is not None}
+                compactions = {}
+                if table == "message" and "part" in tables:
+                    part_columns = {r[1] for r in db.execute("PRAGMA table_info(part)")}
+                    if {"session_id", "time_created", "data"}.issubset(part_columns):
+                        for sid, at, raw in db.execute("SELECT session_id, time_created, data FROM part"):
+                            try:
+                                payload = json.loads(raw)
+                                if isinstance(payload, dict) and payload.get("type") == "compaction":
+                                    compactions.setdefault(sid, []).append(number(at))
+                            except (TypeError, ValueError):
+                                continue
+                elif table == "session_message" and "type" in columns and "time_created" in columns:
+                    for sid, at, raw in db.execute(
+                        "SELECT session_id, time_created, data FROM session_message WHERE type = 'compaction'"
+                    ):
+                        try:
+                            payload = json.loads(raw)
+                            if isinstance(payload, dict) and payload.get("status") == "completed":
+                                compactions.setdefault(sid, []).append(number(at))
+                        except (TypeError, ValueError):
+                            continue
                 where = "WHERE type = 'assistant'" if "type" in columns else ""
-                for ident, session, raw in db.execute(f"SELECT {fields} FROM {table} {where}"):
+                batch = []
+                for ident, session, raw in db.execute(f"SELECT id, session_id, data FROM {table} {where}"):
                     try:
                         data = json.loads(raw)
                     except (TypeError, ValueError):
                         continue
+                    if not isinstance(data, dict):
+                        continue
                     if table == "message" and data.get("role") != "assistant":
                         continue
+                    info = session_info.get(session, {})
+                    if ".opencode" in (info.get("directory") or ""):
+                        continue
                     tokens = data.get("tokens") or {}
+                    if not isinstance(tokens, dict):
+                        continue
                     cache = tokens.get("cache") or {}
+                    if not isinstance(cache, dict):
+                        cache = {}
                     model = data.get("model") or {}
-                    when = (data.get("time") or {}).get("completed") or (data.get("time") or {}).get("created")
+                    if not isinstance(model, dict):
+                        model = {}
+                    timing = data.get("time") or {}
+                    if not isinstance(timing, dict):
+                        continue
+                    when = number(timing.get("completed")) or number(timing.get("created"))
                     if not when:
                         continue
                     item = event(str(data.get("providerID") or model.get("providerID") or "OpenCode"),
@@ -192,7 +270,21 @@ def scan_opencode(root):
                     if item:
                         item["reasoning"] = number(tokens.get("reasoning"))
                         item["total"] += item["reasoning"]
-                        results.append(item)
+                        start, end = number(timing.get("created")), number(timing.get("completed"))
+                        if end > start > 0 and not info.get("child"):
+                            item["runtime_start"] = start
+                            item["runtime_end"] = end
+                            item["runtime"] = end - start
+                        batch.append(item)
+                previous_by_session = {}
+                for item in sorted(batch, key=lambda e: e["timestamp"]):
+                    sid = item["session"]
+                    at = int(datetime.fromisoformat(item["timestamp"]).timestamp() * 1000)
+                    previous = previous_by_session.get(sid)
+                    if previous is not None:
+                        item["compaction_before"] = any(previous < c < at for c in compactions.get(sid, ()))
+                    previous_by_session[sid] = at
+                results.extend(batch)
         except (sqlite3.Error, OSError):
             continue
     return results
@@ -207,7 +299,7 @@ def scan(enabled=None, roots=None):
                                    ("codex", "Codex CLI", scan_codex),
                                    ("gemini", "Gemini CLI", scan_gemini),
                                    ("opencode", "OpenCode", scan_opencode)):
-        root = Path(roots.get(source, SOURCES[source]))
+        root = Path(os.environ["OPENCODE_DB_PATH"]).expanduser() if source == "opencode" and os.environ.get("OPENCODE_DB_PATH") else Path(roots.get(source, SOURCES[source]))
         active = source in enabled
         found = root.exists()
         if active and found:

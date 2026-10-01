@@ -98,7 +98,9 @@ export function SummaryCards({ days, summary, metric, range }: SummaryCardsProps
   const isToday = latestDayStr === todayStr;
   const latestLabel = isToday ? t("summary.today") : t("summary.latestDay");
   const latestValue = latestDay?.[metric] || 0;
-  const average = dayCount ? Math.round((summary[metric] || 0) / dayCount) : 0;
+  const average = metric === "cache_hit_rate"
+    ? summary.cache_hit_rate
+    : dayCount ? Math.round((summary[metric] || 0) / dayCount) : 0;
   const peakDay = findPeakDay(dayEntries, metric);
 
   const utilityCard =

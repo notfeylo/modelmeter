@@ -1,0 +1,11 @@
+{
+  "name": "tallybeam-workspace",
+  "private": true,
+  "scripts": {
+    "install:ui": "npm --prefix frontend ci",
+    "dev:ui": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "audit": "npm --prefix frontend audit --audit-level=high"
+  }
+}

@@ -14,14 +14,14 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .collector import scan, timestamp, number
+from .collector import scan, source_signature, timestamp, number
 from .usage import usage_payload, cache_miss_sessions, cache_miss_detail
 
 DATA = Path.home() / ".tallybeam"
 DB = DATA / "tallybeam.sqlite3"
 CONFIG = DATA / "config.json"
 lock = threading.Lock()
-cache = {"at": 0, "events": [], "connections": [], "limits": None}
+cache = {"at": 0, "signature": None, "events": [], "connections": [], "limits": None}
 
 
 def config():
@@ -51,8 +51,12 @@ def imported():
 def refresh(force=False):
     with lock:
         if force or time.monotonic() - cache["at"] > 20:
-            events, connections, limits = scan(config()["enabled"])
-            cache.update(at=time.monotonic(), events=events + imported(), connections=connections, limits=limits)
+            enabled = config()["enabled"]
+            signature = (source_signature(enabled), DB.stat().st_mtime_ns if DB.exists() else None)
+            if signature != cache["signature"]:
+                events, connections, limits = scan(enabled)
+                cache.update(signature=signature, events=events + imported(), connections=connections, limits=limits)
+            cache["at"] = time.monotonic()
         return dict(cache)
 
 

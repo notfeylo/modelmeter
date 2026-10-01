@@ -19,6 +19,7 @@ def event_metrics(event):
         row[key] = event.get(key, 0)
     row["reasoning"] = event.get("reasoning", 0)
     row["active"] = row["input"] + row["output"] + row["reasoning"]
+    row["runtime"] = event.get("runtime", 0)
     row["user_message_count"] = 1
     return row
 
@@ -39,14 +40,31 @@ def selected(events, range_value):
 def _annotated(events):
     grouped = defaultdict(list)
     for event in events:
-        grouped[(event["provider"], event["session"], event["model"])].append(event)
-    for key, group in grouped.items():
+        grouped[(event.get("source", event["provider"]), event["session"])].append(event)
+    for _, group in grouped.items():
         previous = None
         for index, event in enumerate(sorted(group, key=lambda e: e["timestamp"])):
-            expected = previous["total"] if previous and previous["cache_read"] > 0 else None
+            same_model = previous and previous["provider"] == event["provider"] and previous["model"] == event["model"]
+            real_session = event.get("session") not in (None, "", "Imported")
+            expected = previous["total"] if real_session and same_model and previous["cache_read"] > 0 and not event.get("compaction_before") else None
             miss = max(0, expected - event["cache_read"]) if expected is not None else None
+            key = (event.get("source", event["provider"]), event["session"], event["provider"], event["model"])
             yield key, index, event, expected, miss
             previous = event
+
+
+def merged_runtime(intervals):
+    total, end = 0, None
+    for start, finish in sorted(intervals):
+        if finish <= start:
+            continue
+        if end is None or start >= end:
+            total += finish - start
+            end = finish
+        elif finish > end:
+            total += finish - end
+            end = finish
+    return total
 
 
 def _range_days(events, range_value):
@@ -63,21 +81,26 @@ def usage_payload(all_events, range_value="30"):
         range_value = "30"
     events = selected(all_events, range_value)
     day_names = _range_days(events, range_value)
-    days = {name: empty() for name in day_names}
+    hourly_trend = range_value == "7"
+    day_buckets = ([f"{name}T{hour:02d}" for name in day_names for hour in range(24)]
+                   if hourly_trend else day_names)
+    days = {name: empty() for name in day_buckets}
     summary = empty()
     models, providers, provider_models, trends, heat = {}, {}, {}, {}, {}
+    intervals = defaultdict(list)
     hourly = len(day_names) <= 90
     for _, _, event, expected, miss in _annotated(events):
         local = datetime.fromisoformat(event["timestamp"]).astimezone()
         date = local.date().isoformat()
-        if date not in days:
+        if date not in day_names:
             continue
+        day_bucket = f"{date}T{local.hour:02d}" if hourly_trend else date
         metrics = event_metrics(event)
         if expected is not None:
             metrics["cache_expected"] = expected
             metrics["cache_miss"] = miss
         add(summary, metrics)
-        add(days[date], metrics)
+        add(days[day_bucket], metrics)
         model, provider = event["model"], event["provider"]
         add(models.setdefault(model, empty()), metrics)
         add(providers.setdefault(provider, empty()), metrics)
@@ -86,12 +109,31 @@ def usage_payload(all_events, range_value="30"):
         add(trends.setdefault(pm, {}).setdefault(date, empty()), metrics)
         bucket = f"{date}T{local.hour // 2 * 2:02d}" if hourly else date
         add(heat.setdefault(bucket, empty()), metrics)
+        if event.get("runtime_start") is not None and event.get("runtime_end") is not None:
+            interval = (event["runtime_start"], event["runtime_end"])
+            for name in ("summary", f"day:{day_bucket}", f"model:{model}", f"provider:{provider}",
+                         f"pm:{provider}\0{model}", f"trend:{provider}\0{model}\0{date}", f"heat:{bucket}"):
+                intervals[name].append(interval)
     for date in day_names:
         if hourly:
             for hour in range(0, 24, 2):
                 heat.setdefault(f"{date}T{hour:02d}", empty())
         else:
             heat.setdefault(date, empty())
+    summary["runtime_dedup"] = merged_runtime(intervals["summary"])
+    for key, value in days.items():
+        value["runtime_dedup"] = merged_runtime(intervals[f"day:{key}"])
+    for key, value in models.items():
+        value["runtime_dedup"] = merged_runtime(intervals[f"model:{key}"])
+    for key, value in providers.items():
+        value["runtime_dedup"] = merged_runtime(intervals[f"provider:{key}"])
+    for (provider, model), value in provider_models.items():
+        value["runtime_dedup"] = merged_runtime(intervals[f"pm:{provider}\0{model}"])
+    for (provider, model), values in trends.items():
+        for date, value in values.items():
+            value["runtime_dedup"] = merged_runtime(intervals[f"trend:{provider}\0{model}\0{date}"])
+    for key, value in heat.items():
+        value["runtime_dedup"] = merged_runtime(intervals[f"heat:{key}"])
     def named(key, value):
         return {"name": key, **value}
     def pm_named(key, value):
@@ -105,7 +147,7 @@ def usage_payload(all_events, range_value="30"):
                  "availableLastDay": max(local_days) if local_days else None, "range": range_value,
                  "assistantMessageCount": len(events), "scannedRows": len(all_events)},
         "summary": summary,
-        "days": [{"date": day, **days[day]} for day in day_names],
+        "days": [{"date": day, **days[day]} for day in day_buckets],
         "models": [named(k, v) for k, v in sorted(models.items(), key=lambda x: x[1]["total"], reverse=True)],
         "providers": [named(k, v) for k, v in sorted(providers.items(), key=lambda x: x[1]["total"], reverse=True)],
         "providerModels": [pm_named(k, v) for k, v in provider_models.items()],
@@ -123,8 +165,11 @@ def session_key(key):
 
 def cache_miss_sessions(all_events, range_value="30", date=None):
     events = selected(all_events, range_value)
+    selected_ids = {id(event) for event in events}
     groups = defaultdict(list)
-    for key, index, event, expected, miss in _annotated(events):
+    for key, index, event, expected, miss in _annotated(all_events):
+        if id(event) not in selected_ids:
+            continue
         if date and datetime.fromisoformat(event["timestamp"]).astimezone().date().isoformat() != date:
             continue
         groups[key].append((index, event, expected, miss))
@@ -135,7 +180,7 @@ def cache_miss_sessions(all_events, range_value="30", date=None):
         if not total_expected:
             continue
         times = [int(datetime.fromisoformat(r[1]["timestamp"]).timestamp() * 1000) for r in records]
-        rows.append({"sessionId": session_key(key), "title": key[1], "provider": key[0], "model": key[2],
+        rows.append({"sessionId": session_key(key), "title": records[0][1].get("title") or key[1], "provider": key[2], "model": key[3],
                      "cacheMiss": total_miss, "cacheExpected": total_expected,
                      "missRate": total_miss / total_expected * 100, "pairs": sum(r[2] is not None for r in records),
                      "firstTime": min(times), "lastTime": max(times), "noCache": False})
@@ -150,10 +195,10 @@ def cache_miss_detail(all_events, identity):
     if not records:
         return None
     key = records[0][0]
-    return {"sessionId": identity, "title": key[1], "provider": key[0], "model": key[2], "noCache": False,
+    return {"sessionId": identity, "title": records[0][2].get("title") or key[1], "provider": key[2], "model": key[3], "noCache": False,
             "messages": [{"id": f"{identity}-{index}", "idx": index,
                           "ts": int(datetime.fromisoformat(e["timestamp"]).timestamp() * 1000),
                           "total": e["total"], "cacheRead": e["cache_read"], "cacheWrite": e["cache_write"],
-                          "input": e["input"], "output": e["output"], "reasoning": 0,
+                          "input": e["input"], "output": e["output"], "reasoning": e.get("reasoning", 0),
                           "prevTotal": expected, "miss": miss}
                          for _, index, e, expected, miss in records]}

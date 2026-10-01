@@ -8,7 +8,7 @@ import { LocaleProvider } from "@/lib/i18n/index.tsx"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="light" storageKey="tallybeam-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="tallybeam-theme-v2">
       <LocaleProvider>
         <App />
       </LocaleProvider>

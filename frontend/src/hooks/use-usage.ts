@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { UsagePayload, MetricSummary } from "@/types";
 import { translate, type Locale } from "@/lib/i18n";
 
@@ -37,11 +37,14 @@ export function useUsage(range: string) {
   const [data, setData] = useState<UsagePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   const fetchData = useCallback(
     async (force = false) => {
+      const id = ++requestId.current;
       setLoading(true);
       setError(null);
+      if (!force) setData(null);
       try {
         const url = new URL("/api/usage", window.location.origin);
         url.searchParams.set("range", range);
@@ -51,11 +54,11 @@ export function useUsage(range: string) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || translate(getLocale(), "format.loadFailed"));
 
-        setData(enrichPayload(json));
+        if (id === requestId.current) setData(enrichPayload(json));
       } catch (err) {
-        setError(err instanceof Error ? err.message : translate(getLocale(), "format.loadError"));
+        if (id === requestId.current) setError(err instanceof Error ? err.message : translate(getLocale(), "format.loadError"));
       } finally {
-        setLoading(false);
+        if (id === requestId.current) setLoading(false);
       }
     },
     [range],
@@ -63,6 +66,7 @@ export function useUsage(range: string) {
 
   useEffect(() => {
     fetchData();
+    return () => { requestId.current += 1; };
   }, [fetchData]);
 
   return { data, loading, error, refresh: () => fetchData(true) };

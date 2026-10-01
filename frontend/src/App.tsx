@@ -24,7 +24,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCwIcon, MoonIcon, SunIcon } from "lucide-react";
+import { RefreshCwIcon, MoonIcon, SunIcon, MonitorIcon } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { useLocale } from "@/lib/i18n";
 
@@ -35,8 +35,6 @@ export function App() {
   const { data, loading, error, refresh } = useUsage(range);
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useLocale();
-
-  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   if (error && !data) {
     return (
@@ -123,12 +121,14 @@ export function App() {
             </Button>
 
             <Button
-              onClick={() => setTheme(isDark ? "light" : "dark")}
+              onClick={() => setTheme(theme === "dark" ? "light" : theme === "light" ? "system" : "dark")}
               variant="outline"
               size="sm"
               className="h-8 rounded-lg px-2"
+              aria-label={`Theme: ${theme}. Switch to ${theme === "dark" ? "light" : theme === "light" ? "system" : "dark"}`}
+              title={`Theme: ${theme}`}
             >
-              {isDark ? <SunIcon className="size-3.5" /> : <MoonIcon className="size-3.5" />}
+              {theme === "dark" ? <SunIcon className="size-3.5" /> : theme === "light" ? <MonitorIcon className="size-3.5" /> : <MoonIcon className="size-3.5" />}
             </Button>
 
             <Button

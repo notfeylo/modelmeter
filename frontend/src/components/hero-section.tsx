@@ -25,8 +25,8 @@ export function HeroSection({ payload, metric }: HeroSectionProps) {
   const metricLabel = t(`metric.${metric}`);
 
   const days = payload.days;
-  const startDate = days[0]?.date || meta.firstDay || "—";
-  const endDate = days.at(-1)?.date || meta.lastDay || "—";
+  const startDate = days[0]?.date.slice(0, 10) || meta.firstDay || "—";
+  const endDate = days.at(-1)?.date.slice(0, 10) || meta.lastDay || "—";
   const totalValue = payload.summary[metric] || 0;
 
   return (

@@ -6,6 +6,7 @@ target/
 .env
 .pytest_cache/
 build/
+dist/
 *.egg-info/
 frontend/node_modules/
 frontend/static/

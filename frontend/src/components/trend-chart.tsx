@@ -134,7 +134,12 @@ export function TrendChart({ days, metric, loading, range }: TrendChartProps) {
             </defs>
             <CartesianGrid vertical={false} stroke={GRID_STROKE} strokeDasharray="3 3" />
             <XAxis
-              dataKey="dateLabel"
+              dataKey="date"
+              tickFormatter={(value: string) => {
+                if (!isHourly) return formatDateLabel(value, "short", locale);
+                const hour = value.slice(11, 13);
+                return hour === "00" ? formatDateLabel(value.slice(0, 10), "short", locale) : `${hour}:00`;
+              }}
               tickLine={false}
               axisLine={false}
               tickMargin={6}
@@ -204,7 +209,7 @@ export function TrendChart({ days, metric, loading, range }: TrendChartProps) {
             {peakIndex >= 0 && (
               <ReferenceDot
                 yAxisId="left"
-                x={chartData[peakIndex]?.dateLabel}
+                x={chartData[peakIndex]?.date}
                 y={chartData[peakIndex]?.[metric] as number}
                 r={6}
                 fill="var(--chart-1)"
