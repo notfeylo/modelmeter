@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .collector import scan, timestamp, number
+from .usage import usage_payload, cache_miss_sessions, cache_miss_detail
 
 DATA = Path.home() / ".tallybeam"
 DB = DATA / "tallybeam.sqlite3"
@@ -30,7 +31,7 @@ def config():
             return data
     except (OSError, ValueError):
         pass
-    return {"enabled": ["claude", "codex", "gemini"]}
+    return {"enabled": ["claude", "codex", "gemini", "opencode"]}
 
 
 def database():
@@ -120,6 +121,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         uri = urlparse(self.path)
+        if uri.path == "/api/usage":
+            value = parse_qs(uri.query).get("range", ["30"])[0]
+            return self.respond(usage_payload(refresh()["events"], value))
+        if uri.path == "/api/limits":
+            return self.respond({"codex": refresh()["limits"]})
+        if uri.path == "/api/cache-miss/sessions":
+            params = parse_qs(uri.query)
+            value = params.get("range", ["30"])[0]
+            if value not in ("7", "30", "90", "180", "365", "all"):
+                value = "30"
+            day = params.get("date", [None])[0]
+            return self.respond(cache_miss_sessions(refresh()["events"], value, day))
+        if uri.path.startswith("/api/cache-miss/session/"):
+            identity = uri.path.rsplit("/", 1)[-1]
+            detail = cache_miss_detail(refresh()["events"], identity)
+            return self.respond(detail if detail else {"error": "Session not found"}, 200 if detail else 404)
         if uri.path == "/api/overview":
             params = parse_qs(uri.query)
             try:
@@ -128,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
                 days = 30
             days = max(1, min(days, 365))
             provider = params.get("provider", ["all"])[0]
-            if provider.lower() not in ("all", "claude", "codex", "gemini", "grok"):
+            if provider.lower() not in ("all", "claude", "codex", "gemini", "grok", "opencode"):
                 provider = "all"
             return self.respond(overview(days, provider))
         if uri.path == "/api/health":
@@ -141,16 +158,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({"error": "Provider and session required"}, 400)
             events = sorted((e for e in refresh()["events"] if e["provider"] == provider and e["session"] == session_id), key=lambda e: e["timestamp"])
             return self.respond({"provider": provider, "session": session_id, "events": events[:5000]})
-        name = {"/": "index.html", "/app.js": "app.js", "/styles.css": "styles.css", "/logo.svg": "logo.svg"}.get(uri.path)
-        if not name:
+        name = "index.html" if uri.path == "/" else uri.path.lstrip("/")
+        if not (name == "index.html" or name == "logo.svg" or (name.startswith("assets/") and "/" not in name[7:])):
             return self.respond({"error": "Not found"}, 404)
-        body = (files("tallybeam") / "static" / name).read_bytes()
-        mime = {"html": "text/html", "js": "application/javascript", "css": "text/css", "svg": "image/svg+xml"}[name.split(".")[-1]]
+        resource = files("tallybeam") / "static" / name
+        if not resource.is_file():
+            return self.respond({"error": "Not found"}, 404)
+        body = resource.read_bytes()
+        mime = {"html": "text/html", "js": "application/javascript", "css": "text/css", "svg": "image/svg+xml", "woff2": "font/woff2"}.get(name.split(".")[-1], "application/octet-stream")
         self.send_response(200)
         self.send_header("Content-Type", mime + "; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -173,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond({"ok": True})
         if self.path == "/api/connections":
             enabled = data.get("enabled") if isinstance(data, dict) else None
-            if not isinstance(enabled, list) or any(x not in ("claude", "codex", "gemini") for x in enabled):
+            if not isinstance(enabled, list) or any(x not in ("claude", "codex", "gemini", "opencode") for x in enabled):
                 return self.respond({"error": "Invalid connections"}, 400)
             DATA.mkdir(exist_ok=True)
             CONFIG.write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
@@ -188,7 +208,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond({"error": f"Invalid row {i+1}"}, 400)
                 when = timestamp(row.get("timestamp"))
                 provider = str(row.get("provider", ""))[:40].strip()
-                if provider not in ("Claude", "Codex", "Gemini", "Grok", "Other") or not when:
+                if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other") or not when:
                     return self.respond({"error": f"Invalid provider or timestamp in row {i+1}"}, 400)
                 values = [number(row.get(k)) for k in ("input", "output", "cache_read", "cache_write")]
                 ident = str(row.get("id") or f"{provider}:{row.get('session')}:{when}:{i}")[:200]

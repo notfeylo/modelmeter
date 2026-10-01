@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +14,7 @@ SOURCES = {
     "claude": HOME / ".claude" / "projects",
     "codex": HOME / ".codex" / "sessions",
     "gemini": HOME / ".gemini" / "tmp",
+    "opencode": HOME / ".local" / "share" / "opencode",
 }
 
 
@@ -128,7 +131,7 @@ def scan_codex(root):
             item = event("Codex", model, row.get("timestamp"), session, delta, "Codex CLI")
             if item:
                 results.append(item)
-    return results, (latest_limit[1] if latest_limit else None)
+    return results, ({**latest_limit[1], "recorded_at": latest_limit[0]} if latest_limit else None)
 
 
 def scan_gemini(root):
@@ -150,15 +153,61 @@ def scan_gemini(root):
     return results
 
 
+def scan_opencode(root):
+    """Read OpenCode V1/V2 assistant usage from a read-only SQLite connection."""
+    results = []
+    for path in source_files(root, ".db"):
+        if not path.name.startswith("opencode") or path.name == "opencode-auth.db":
+            continue
+        try:
+            with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
+                tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                candidates = [t for t in ("message", "session_message") if t in tables]
+                if not candidates:
+                    continue
+                table = max(candidates, key=lambda t: db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])
+                columns = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+                fields = "id, session_id, data" if "session_id" in columns else None
+                if not fields:
+                    continue
+                where = "WHERE type = 'assistant'" if "type" in columns else ""
+                for ident, session, raw in db.execute(f"SELECT {fields} FROM {table} {where}"):
+                    try:
+                        data = json.loads(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if table == "message" and data.get("role") != "assistant":
+                        continue
+                    tokens = data.get("tokens") or {}
+                    cache = tokens.get("cache") or {}
+                    model = data.get("model") or {}
+                    when = (data.get("time") or {}).get("completed") or (data.get("time") or {}).get("created")
+                    if not when:
+                        continue
+                    item = event(str(data.get("providerID") or model.get("providerID") or "OpenCode"),
+                                 data.get("modelID") or model.get("id"), when / 1000,
+                                 session, {"input": tokens.get("input"), "output": tokens.get("output"),
+                                           "cache_read_input_tokens": cache.get("read"),
+                                           "cache_write_input_tokens": cache.get("write")}, "OpenCode")
+                    if item:
+                        item["reasoning"] = number(tokens.get("reasoning"))
+                        item["total"] += item["reasoning"]
+                        results.append(item)
+        except (sqlite3.Error, OSError):
+            continue
+    return results
+
+
 def scan(enabled=None, roots=None):
-    enabled = enabled or list(SOURCES)
+    enabled = list(SOURCES) if enabled is None else enabled
     roots = roots or SOURCES
     events, connections = [], []
     limit = None
     for source, title, scanner in (("claude", "Claude Code", scan_claude),
                                    ("codex", "Codex CLI", scan_codex),
-                                   ("gemini", "Gemini CLI", scan_gemini)):
-        root = Path(roots[source])
+                                   ("gemini", "Gemini CLI", scan_gemini),
+                                   ("opencode", "OpenCode", scan_opencode)):
+        root = Path(roots.get(source, SOURCES[source]))
         active = source in enabled
         found = root.exists()
         if active and found:

@@ -1,0 +1,342 @@
+import { useState, useEffect, useMemo } from "react";
+import {
+  Line,
+  LineChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+} from "recharts";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowLeftIcon } from "lucide-react";
+import type { CacheMissSessionsPayload, CacheMissSessionDetail } from "@/types";
+import { useCacheMissSessions, fetchCacheMissSessionDetail } from "@/hooks/use-cache-miss";
+import { useLocale } from "@/lib/i18n";
+import { formatCompact, formatNumber, formatDateTime, formatAxisValue, formatDurationGap } from "@/lib/format";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  range: string;
+  date: string | null;
+}
+
+export function CacheMissExplorer({ open, onOpenChange, range, date }: Props) {
+  const { t } = useLocale();
+  const { data, loading } = useCacheMissSessions({ range, date: date ?? undefined }, open);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedId(null);
+    }
+  }, [open]);
+
+  // Title reflects the current level.
+  const title = selectedId
+      ? t("chart.sessionDetail")
+      : `${t("chart.cacheMissExplorerTitle")}${date ? ` · ${date}` : ""}`;
+  const desc = selectedId
+      ? t("chart.lifecycleChart")
+      : date
+        ? t("chart.clickPointHint")
+        : t("chart.cacheMissExplorerDesc");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="glass-panel max-h-[88vh] gap-0 overflow-hidden rounded-xl border p-0 sm:max-w-5xl">
+        <DialogHeader className="border-b px-5 py-4">
+          <DialogTitle className="text-base font-semibold">{title}</DialogTitle>
+          <DialogDescription className="text-xs">{desc}</DialogDescription>
+        </DialogHeader>
+
+        {selectedId ? (
+          <SessionDetail
+            sessionId={selectedId}
+            onBack={() => setSelectedId(null)}
+          />
+        ) : (
+          <SessionList
+            data={data}
+            loading={loading}
+            onSelect={(id) => setSelectedId(id)}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Level 1: session list ─────────────────────────────────────────────────
+
+function SessionList({
+  data,
+  loading,
+  onSelect,
+}: {
+  data: CacheMissSessionsPayload | null;
+  loading: boolean;
+  onSelect: (sessionId: string) => void;
+}) {
+  const { t, locale } = useLocale();
+
+  if (loading || !data) {
+    return (
+      <div className="flex flex-col gap-3 px-5 py-6">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-[420px] w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  const rate = data.totalExpected > 0 ? (data.totalMiss / data.totalExpected) * 100 : 0;
+
+  return (
+    <div className="flex flex-col">
+      {/* Summary bar */}
+      <div className="grid grid-cols-3 gap-3 border-b px-5 py-3">
+        <SummaryStat label={t("chart.columnMissTokens")} value={formatCompact(data.totalMiss, locale)} sub={formatNumber(data.totalMiss, locale)} accent="#f87171" />
+        <SummaryStat label={t("chart.columnExpected")} value={formatCompact(data.totalExpected, locale)} sub={formatNumber(data.totalExpected, locale)} accent="#fbbf24" />
+        <SummaryStat label={t("chart.columnMissRate")} value={`${rate.toFixed(1)}%`} sub={t("chart.sessionsCount", { count: data.sessions.length })} accent="#f472b6" />
+      </div>
+
+      <ScrollArea className="h-[58vh]">
+        <div className="[&_[data-slot=table-container]]:overflow-visible">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-background">
+            <TableRow className="border-border/50 hover:bg-transparent">
+              <TableHead className="pl-5">{t("chart.columnSession")}</TableHead>
+              <TableHead>{t("chart.columnModel")}</TableHead>
+              <TableHead className="text-right">{t("chart.columnMissTokens")}</TableHead>
+              <TableHead className="text-right">{t("chart.columnMissRate")}</TableHead>
+              <TableHead className="text-right">{t("chart.columnPairs")}</TableHead>
+              <TableHead className="pr-5 text-right">{t("chart.columnTime")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.sessions.map((s) => (
+              <TableRow
+                key={s.sessionId}
+                onClick={() => onSelect(s.sessionId)}
+                className="cursor-pointer border-border/30 transition-colors hover:bg-secondary/40"
+              >
+                <TableCell className="max-w-[220px] pl-5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-xs font-medium text-foreground" title={s.title}>
+                      {s.title || s.sessionId.slice(0, 16)}
+                    </span>
+                    {s.noCache && (
+                      <Badge variant="secondary" className="shrink-0 px-1 py-0 text-[9px] font-normal text-amber-500">
+                        {t("chart.noCacheProvider")}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="font-mono text-[11px] text-muted-foreground">
+                  {s.provider}/{s.model}
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs font-semibold text-foreground">
+                  {formatCompact(s.cacheMiss, locale)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs">
+                  <span className={s.missRate > 50 ? "font-semibold text-amber-500" : "text-muted-foreground"}>
+                    {s.missRate.toFixed(1)}%
+                  </span>
+                </TableCell>
+                <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+                  {s.pairs.toLocaleString()}
+                </TableCell>
+                <TableCell className="pr-5 text-right text-[10px] text-muted-foreground">
+                  {formatDateTime(new Date(s.lastTime).toISOString(), locale)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="font-mono text-lg font-bold leading-none" style={{ color: accent }}>
+        {value}
+      </span>
+      <span className="font-mono text-[10px] text-muted-foreground">{sub}</span>
+    </div>
+  );
+}
+
+// ── Level 2: session detail (lifecycle) ───────────────────────────────────
+
+function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+  const { t, locale } = useLocale();
+  const [detail, setDetail] = useState<CacheMissSessionDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDetail(null);
+    setError(null);
+    fetchCacheMissSessionDetail(sessionId)
+      .then((d) => { if (!cancelled) setDetail(d); })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "load failed"); });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const chartData = useMemo(() => {
+    if (!detail) return [];
+    return detail.messages.map((m) => ({
+      idx: m.idx,
+      prevTotal: m.prevTotal ?? null,
+      cacheRead: m.cacheRead,
+      total: m.total,
+      miss: m.miss ?? 0,
+    }));
+  }, [detail]);
+
+  if (error) {
+    return (
+      <div className="px-5 py-16 text-center text-sm text-destructive">{error}</div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="flex flex-col gap-3 px-5 py-6">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-[280px] w-full rounded-lg" />
+        <Skeleton className="h-[160px] w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 border-b px-5 py-2.5">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1 px-2 text-xs">
+          <ArrowLeftIcon data-icon="inline-start" />
+          {t("chart.backToList")}
+        </Button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium text-foreground" title={detail.title}>{detail.title}</p>
+          <p className="font-mono text-[10px] text-muted-foreground">{detail.provider}/{detail.model} · {detail.messages.length} msgs</p>
+        </div>
+        {detail.noCache && (
+          <Badge variant="secondary" className="text-[10px] text-amber-500">{t("chart.noCacheProvider")}</Badge>
+        )}
+      </div>
+
+      {/* Lifecycle chart: prev total (dashed muted) vs cache_read (solid red) */}
+      <div className="px-5 pt-4">
+        <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t("chart.lifecycleChart")}
+        </p>
+        <div className="h-[260px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+              <XAxis
+                dataKey="idx"
+                type="number"
+                domain={["dataMin", "dataMax"]}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                tickMargin={6}
+                label={{ value: t("chart.msgIndex"), position: "insideBottom", offset: -2, style: { fill: "var(--muted-foreground)", fontSize: 10 } }}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={6}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                tickFormatter={(v: number) => formatAxisValue(v, locale)}
+                width={48}
+              />
+              <Line type="monotone" dataKey="prevTotal" name="prev total" stroke="#9e8cff" strokeWidth={1.5} strokeDasharray="4 3" dot={false} connectNulls />
+              <Line type="monotone" dataKey="cacheRead" name="cache_read" stroke="#f87171" strokeWidth={2} dot={false} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Per-message table */}
+      <ScrollArea className="h-[34vh]">
+        <div className="[&_[data-slot=table-container]]:overflow-visible">
+        <Table>
+          <TableHeader className="sticky top-0 z-10 bg-background">
+            <TableRow className="border-border/50 hover:bg-transparent">
+              <TableHead className="pl-5">{t("chart.msgIndex")}</TableHead>
+              <TableHead>{t("chart.columnGap")}</TableHead>
+              <TableHead className="text-right">{t("chart.columnTotal")}</TableHead>
+              <TableHead className="text-right">cache_read</TableHead>
+              <TableHead className="text-right">input</TableHead>
+              <TableHead className="text-right">{t("chart.columnOutputReasoning")}</TableHead>
+              <TableHead className="text-right">{t("chart.columnExpected")}</TableHead>
+              <TableHead className="pr-5 text-right">{t("chart.columnMissTokens")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {detail.messages.map((m, i) => {
+              const gap = i === 0 ? null : m.ts - detail.messages[i - 1].ts;
+              return (
+                <TableRow key={m.idx} className="border-border/30 transition-colors hover:bg-secondary/40">
+                  <TableCell className="whitespace-nowrap pl-5 font-mono text-[11px] text-muted-foreground">{m.idx}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
+                    {gap != null ? formatDurationGap(gap, locale) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+                    {formatNumber(m.total, locale)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[11px]">
+                    <span style={{ color: m.cacheRead === 0 ? "var(--destructive)" : "var(--foreground)" }}>
+                      {formatNumber(m.cacheRead, locale)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+                    {formatNumber(m.input, locale)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+                    {formatNumber(m.output + m.reasoning, locale)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[11px] text-muted-foreground">
+                    {m.prevTotal != null ? formatNumber(m.prevTotal, locale) : "—"}
+                  </TableCell>
+                  <TableCell className="pr-5 text-right font-mono text-[11px] font-semibold" style={{ color: (m.miss ?? 0) > 0 ? "#f87171" : "var(--muted-foreground)" }}>
+                    {m.miss != null ? formatNumber(m.miss, locale) : "—"}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+
