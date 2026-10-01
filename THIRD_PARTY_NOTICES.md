@@ -4,6 +4,8 @@ The dashboard layout, chart components, styling patterns, and cache lifecycle pr
 
 Space Grotesk is distributed through `@fontsource-variable/space-grotesk`; other frontend dependencies and licenses are recorded in `frontend/package-lock.json`.
 
+The Windows application bundles Python, Pillow, pystray, and the PyInstaller bootloader. Their licenses and source are available from [Python](https://www.python.org/downloads/), [Pillow](https://github.com/python-pillow/Pillow), [pystray](https://github.com/moses-palmer/pystray), and [PyInstaller](https://github.com/pyinstaller/pyinstaller). The build script and Tallybeam source needed to rebuild the installer are included in this repository.
+
 ## MIT license for adapted upstream code
 
 Copyright (c) contributors to `heimoshuiyu/opencode-token-dashboard`.

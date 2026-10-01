@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sqlite3
 import threading
 import time
@@ -14,6 +15,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import __version__
 from .collector import scan, source_signature, timestamp, number
 from .usage import usage_payload, cache_miss_sessions, cache_miss_detail
 
@@ -108,7 +110,7 @@ def sessions(events):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Tallybeam/0.1"
+    server_version = f"Tallybeam/{__version__}"
 
     def log_message(self, format, *args):
         pass
@@ -153,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
                 provider = "all"
             return self.respond(overview(days, provider))
         if uri.path == "/api/health":
-            return self.respond({"ok": True, "version": "0.1.0"})
+            return self.respond({"ok": True, "service": "tallybeam", "version": __version__})
         if uri.path == "/api/session":
             params = parse_qs(uri.query)
             provider = params.get("provider", [""])[0]
@@ -226,12 +228,23 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond({"error": "Not found"}, 404)
 
 
+class LocalHTTPServer(ThreadingHTTPServer):
+    """Bind exclusively so a second launch cannot silently share the port."""
+
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Local AI usage dashboard")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = LocalHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"Tallybeam listening at http://127.0.0.1:{args.port}", flush=True)
     if not args.no_browser:
         webbrowser.open(f"http://127.0.0.1:{args.port}")

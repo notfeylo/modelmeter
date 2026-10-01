@@ -25,3 +25,22 @@ jobs:
         working-directory: frontend
       - run: python -m pip wheel . --no-deps -w dist
       - run: cargo test --manifest-path rust-indexer/Cargo.toml
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m unittest discover -s tests -v
+      - run: python -m pip install pyinstaller==6.22.3 pystray==0.19.5 Pillow==12.3.0
+      - run: choco install innosetup --yes --no-progress
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tallybeam-Windows-Installer
+          path: dist/Tallybeam-Setup-0.2.0-win-x64.exe
+          if-no-files-found: error

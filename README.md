@@ -15,6 +15,14 @@ A desktop-local dashboard for token usage across AI coding tools. It reads usage
 
 See [metric definitions](docs/metrics.md) and [architecture](docs/architecture.md) for what each source can actually supply.
 
+## Download for Windows
+
+Download [Tallybeam for Windows (installer)](https://github.com/notfeylo/tallybeam/releases/latest), run the `Tallybeam-Setup-...-win-x64.exe` file, and launch Tallybeam from the Start Menu or desktop shortcut. It targets Windows 10/11 x64 and includes Python and the dashboard; users do not need to install Python, Node.js, or Rust. The installer uses the current user's app folder and does not request administrator rights.
+
+The dashboard opens in your default browser. Tallybeam remains in the system tray; use **Open dashboard** or **Quit Tallybeam** from its tray menu. Running the shortcut again opens the existing dashboard. Uninstall through Windows **Installed apps**. Usage imports and connection settings in `~/.tallybeam` remain after uninstall so upgrades do not erase them. The installer is currently unsigned, so Windows may show a SmartScreen warning; verify the download and SHA-256 hash on the release page before running it.
+
+To build or verify the Windows installer yourself, see [Windows packaging](docs/windows-installer.md).
+
 ## Run
 
 Requires Python 3.10 or newer. No Python package dependencies are needed to run from source.
