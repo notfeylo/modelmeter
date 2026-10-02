@@ -44,5 +44,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Modelmeter-Windows-Installer
-          path: dist/Modelmeter-Setup-0.5.0-win-x64.exe
+          path: dist/Modelmeter-Setup-0.5.1-win-x64.exe
           if-no-files-found: error

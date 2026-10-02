@@ -382,7 +382,7 @@ function HourlyGrid({ columns, maxValue, metric, locale }: HourlyGridProps) {
   const showRowLabel = (blockIndex: number) => blockIndex % 2 === 0;
 
   return (
-    <div className="overflow-x-auto pb-1">
+    <div className="heatmap-scroll overflow-x-auto pb-1">
       <div
         className="mx-auto grid w-fit"
         style={{
@@ -517,7 +517,7 @@ function CalendarGrid({
   const gridTemplateRows = `${monthH}px repeat(7, ${size}px)`;
 
   return (
-    <div className="overflow-x-auto pb-1">
+    <div className="heatmap-scroll overflow-x-auto pb-1">
       <div
         className="mx-auto grid w-fit"
         style={{
