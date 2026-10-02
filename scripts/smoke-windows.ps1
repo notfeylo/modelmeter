@@ -13,7 +13,7 @@ try {
             $port = $Matches[1]
             $result = Invoke-RestMethod "http://127.0.0.1:$port/api/health" -TimeoutSec 1
             $app.Refresh()
-            if ($result.ok -eq $true -and $result.version -eq "0.4.0" -and $app.MainWindowTitle -eq "Tallybeam") {
+            if ($result.ok -eq $true -and $result.version -eq "0.4.1" -and $app.MainWindowTitle -eq "Tallybeam") {
                 $healthy = $true
                 break
             }
@@ -22,6 +22,13 @@ try {
     }
     if (-not $healthy) { throw "Desktop app did not open a native window and healthy local service." }
     Write-Host "Desktop smoke passed: Tauri window and API $($result.version) on port $port."
+    $app.CloseMainWindow() | Out-Null
+    if (-not $app.WaitForExit(5000)) { throw "Closing the main window did not stop the Tauri process." }
+    Start-Sleep -Milliseconds 300
+    if (Get-Process -Id $backend.ProcessId -ErrorAction SilentlyContinue) {
+        throw "Closing the main window left the Python backend running."
+    }
+    Write-Host "Desktop shutdown passed: window and backend both exited."
 } finally {
     if (-not $app.HasExited) {
         $app.CloseMainWindow() | Out-Null

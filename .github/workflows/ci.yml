@@ -44,5 +44,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Tallybeam-Windows-Installer
-          path: dist/Tallybeam-Setup-0.4.0-win-x64.exe
+          path: dist/Tallybeam-Setup-0.4.1-win-x64.exe
           if-no-files-found: error

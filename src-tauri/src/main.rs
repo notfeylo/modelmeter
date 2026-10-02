@@ -124,6 +124,11 @@ fn main() {
                 .build()?;
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .build(tauri::generate_context!())
         .expect("failed to initialize Tallybeam")
         .run(|app, event| {

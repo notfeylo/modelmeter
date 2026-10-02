@@ -12,7 +12,7 @@ python -m venv .venv
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Python .venv/Scripts/python.exe
 ```
 
-The script installs frontend packages from the lockfile, builds the UI, renders the SVG-derived icon, freezes the Python backend, builds the Tauri shell, verifies Microsoft's signature on the WebView2 bootstrapper, and compiles `dist/Tallybeam-Setup-0.4.0-win-x64.exe`. Setup installs WebView2 per user if it is missing. That step requires internet access on PCs without WebView2. The GitHub CI Windows job builds the same installer, runs a desktop smoke check, and uploads it as a workflow artifact.
+The script installs frontend packages from the lockfile, builds the UI, renders the SVG-derived icon, freezes the Python backend, builds the Tauri shell, verifies Microsoft's signature on the WebView2 bootstrapper, and compiles `dist/Tallybeam-Setup-0.4.1-win-x64.exe`. Setup installs WebView2 per user if it is missing. That step requires internet access on PCs without WebView2. The GitHub CI Windows job builds the same installer, runs a desktop smoke check, and uploads it as a workflow artifact.
 
 ## Release verification
 
