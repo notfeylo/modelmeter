@@ -8,6 +8,11 @@ from tallybeam import app
 
 
 class StorageTests(unittest.TestCase):
+    def test_only_absolute_non_root_extra_paths_are_loaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = app.configured_paths({"paths": {"codex": [directory, ".", str(Path(directory).anchor), 3]}})
+            self.assertEqual(paths["codex"], [directory])
+
     def test_imported_usage_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

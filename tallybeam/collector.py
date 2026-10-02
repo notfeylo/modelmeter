@@ -19,6 +19,37 @@ SOURCES = {
 }
 
 
+def source_roots(source, extras=None):
+    """Known session locations plus user-added roots; never crawl the whole disk."""
+    if source == "opencode" and os.environ.get("OPENCODE_DB_PATH"):
+        candidates = [Path(os.environ["OPENCODE_DB_PATH"]).expanduser()]
+    else:
+        candidates = [SOURCES[source]]
+        if source == "codex":
+            candidates.append(SOURCES[source].parent / "archived_sessions")
+        overrides = {
+            "claude": ("CLAUDE_CONFIG_DIR", "projects"),
+            "codex": ("CODEX_HOME", "sessions"),
+            "gemini": ("GEMINI_CLI_HOME", ".gemini/tmp"),
+            "opencode": ("XDG_DATA_HOME", "opencode"),
+        }
+        variable, child = overrides[source]
+        if os.environ.get(variable):
+            candidates.append(Path(os.environ[variable]).expanduser() / child)
+            if source == "codex":
+                candidates.append(Path(os.environ[variable]).expanduser() / "archived_sessions")
+    if isinstance(extras, (str, os.PathLike)):
+        extras = [extras]
+    candidates.extend(Path(value).expanduser() for value in (extras or []))
+    result, seen = [], set()
+    for path in candidates:
+        key = os.path.normcase(str(path.resolve(strict=False)))
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return [path for path in result if not any(other != path and other in path.parents for other in result)]
+
+
 def number(value):
     try:
         return max(0, int(value or 0))
@@ -84,25 +115,72 @@ def source_files(root, suffix):
     return list(root.rglob("*" + suffix)) if root.exists() else []
 
 
+class FileCache:
+    """Local normalized-counter cache; never stores transcript text or credentials."""
+
+    def __init__(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(path)
+        try:
+            self.db.execute("CREATE TABLE IF NOT EXISTS files (kind TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,path))")
+        except sqlite3.DatabaseError:
+            self.db.close()
+            raise
+
+    def read(self, kind, path, parse):
+        try:
+            before = path.stat()
+        except OSError:
+            return parse(path)
+        key = str(path.resolve(strict=False))
+        try:
+            row = self.db.execute("SELECT size,mtime_ns,payload FROM files WHERE kind=? AND path=?", (kind, key)).fetchone()
+        except sqlite3.DatabaseError:
+            return parse(path)
+        if row and (row[0], row[1]) == (before.st_size, before.st_mtime_ns):
+            try:
+                return json.loads(row[2])
+            except (TypeError, ValueError):
+                pass
+        value = parse(path)
+        try:
+            after = path.stat()
+            if (after.st_size, after.st_mtime_ns) == (before.st_size, before.st_mtime_ns):
+                self.db.execute("INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)",
+                                (kind, key, before.st_size, before.st_mtime_ns, json.dumps(value)))
+        except (OSError, sqlite3.DatabaseError):
+            pass
+        return value
+
+    def close(self):
+        try:
+            self.db.commit()
+        except sqlite3.DatabaseError:
+            pass
+        finally:
+            self.db.close()
+
+
 def source_signature(enabled=None, roots=None):
     """Fingerprint local data and OpenCode WAL files without reading their contents."""
     enabled = list(SOURCES) if enabled is None else enabled
-    roots = roots or SOURCES
+    roots = roots or {}
     digest = blake2b(digest_size=16)
     for source in sorted(enabled):
         digest.update(source.encode())
-        root = Path(os.environ["OPENCODE_DB_PATH"]).expanduser() if source == "opencode" and os.environ.get("OPENCODE_DB_PATH") else Path(roots.get(source, SOURCES[source]))
-        if source == "opencode":
-            paths = [root] if root.is_file() else source_files(root, ".db")
-            paths = [p for p in paths if (root.is_file() and p == root) or
-                     (p.name.startswith("opencode") and p.name != "opencode-auth.db")]
-            paths += [Path(str(path) + "-wal") for path in paths]
-        else:
-            suffix = ".json" if source == "gemini" else ".jsonl"
-            paths = source_files(root, suffix)
-            if source == "gemini":
-                paths = [p for p in paths if p.name.startswith("session-")]
-        for path in sorted(paths):
+        paths = []
+        for root in source_roots(source, roots.get(source)):
+            digest.update(str(root.resolve(strict=False)).encode("utf-8", errors="replace"))
+            if source == "opencode":
+                found = [root] if root.is_file() else source_files(root, ".db")
+                found = [p for p in found if (root.is_file() and p == root) or
+                         (p.name.startswith("opencode") and p.name != "opencode-auth.db")]
+                paths.extend(found + [Path(str(path) + "-wal") for path in found])
+            else:
+                suffix = ".json" if source == "gemini" else ".jsonl"
+                found = source_files(root, suffix)
+                paths.extend(p for p in found if source != "gemini" or p.name.startswith("session-"))
+        for path in sorted(set(paths)):
             try:
                 stat = path.stat()
             except OSError:
@@ -112,73 +190,96 @@ def source_signature(enabled=None, roots=None):
     return digest.digest()
 
 
-def scan_claude(root):
-    results = []
+def _scan_claude_file(path):
+    seen = {}
+    for row in json_lines(path):
+        if row.get("type") != "assistant":
+            continue
+        msg = row.get("message") or {}
+        usage = msg.get("usage") or {}
+        key = msg.get("id") or row.get("requestId") or row.get("uuid")
+        item = event("Claude", msg.get("model"), row.get("timestamp"), row.get("sessionId") or path.stem, usage, "Claude Code")
+        if item and key:
+            item["_message_id"] = str(key)
+            if key not in seen or item["total"] >= seen[key]["total"]:
+                seen[key] = item
+    return list(seen.values())
+
+
+def scan_claude(root, file_cache=None):
+    seen = {}
     for path in source_files(root, ".jsonl"):
-        seen = {}
-        for row in json_lines(path):
-            if row.get("type") != "assistant":
-                continue
-            msg = row.get("message") or {}
-            usage = msg.get("usage") or {}
-            key = msg.get("id") or row.get("requestId") or row.get("uuid")
-            item = event("Claude", msg.get("model"), row.get("timestamp"), row.get("sessionId") or path.stem, usage, "Claude Code")
-            if item and key:
-                # Streaming snapshots can repeat a message ID. Keep the final/largest usage.
-                if key not in seen or item["total"] >= seen[key]["total"]:
-                    seen[key] = item
-        results.extend(seen.values())
-    return results
+        batch = file_cache.read("claude-v2", path, _scan_claude_file) if file_cache else _scan_claude_file(path)
+        for item in batch:
+            key = (item["session"], item["_message_id"])
+            if key not in seen or item["total"] >= seen[key]["total"]:
+                seen[key] = item
+    return [{key: value for key, value in item.items() if key != "_message_id"} for item in seen.values()]
 
 
-def scan_codex(root):
+def _scan_codex_file(path):
+    results, latest_limit = [], None
+    previous = None
+    session, model = path.stem, "Unknown model"
+    for row in json_lines(path):
+        payload = row.get("payload") or {}
+        if row.get("type") == "session_meta":
+            session = (payload.get("id") or session)
+        if row.get("type") == "turn_context":
+            model = payload.get("model") or model
+        if payload.get("type") != "token_count":
+            continue
+        limits = payload.get("rate_limits") or {}
+        if limits and (not latest_limit or str(row.get("timestamp", "")) > latest_limit[0]):
+            latest_limit = (str(row.get("timestamp", "")), limits)
+        info = payload.get("info") or {}
+        total = info.get("total_token_usage") or {}
+        if not total:
+            continue
+        fields = ("input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens")
+        if previous is None or any(number(total.get(k)) < number(previous.get(k)) for k in fields):
+            delta = total
+        else:
+            delta = {k: number(total.get(k)) - number(previous.get(k)) for k in fields}
+        previous = total
+        item = event("Codex", model, row.get("timestamp"), session, delta, "Codex CLI")
+        if item:
+            results.append(item)
+    return results, latest_limit
+
+
+def scan_codex(root, file_cache=None):
     results, latest_limit = [], None
     for path in source_files(root, ".jsonl"):
-        previous = None
-        session, model = path.stem, "Codex"
-        for row in json_lines(path):
-            payload = row.get("payload") or {}
-            if row.get("type") == "session_meta":
-                session = (payload.get("id") or session)
-            if row.get("type") == "turn_context":
-                model = payload.get("model") or model
-            if payload.get("type") != "token_count":
-                continue
-            limits = payload.get("rate_limits") or {}
-            if limits and (not latest_limit or str(row.get("timestamp", "")) > latest_limit[0]):
-                latest_limit = (str(row.get("timestamp", "")), limits)
-            info = payload.get("info") or {}
-            total = info.get("total_token_usage") or {}
-            if not total:
-                continue
-            fields = ("input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens")
-            if previous is None or any(number(total.get(k)) < number(previous.get(k)) for k in fields):
-                delta = total
-            else:
-                delta = {k: number(total.get(k)) - number(previous.get(k)) for k in fields}
-            previous = total
-            item = event("Codex", model, row.get("timestamp"), session, delta, "Codex CLI")
-            if item:
-                results.append(item)
+        batch, limit = (file_cache.read("codex-v3", path, _scan_codex_file)
+                        if file_cache else _scan_codex_file(path))
+        results.extend(batch)
+        if limit and (not latest_limit or limit[0] > latest_limit[0]):
+            latest_limit = limit
     return results, ({**latest_limit[1], "recorded_at": latest_limit[0]} if latest_limit else None)
 
 
-def scan_gemini(root):
+def _scan_gemini_file(path):
+    results = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return results
+    for message in data.get("messages", []):
+        if message.get("type") != "gemini":
+            continue
+        item = event("Gemini", message.get("model"), message.get("timestamp"), data.get("sessionId") or path.stem,
+                     message.get("tokens") or {}, "Gemini CLI")
+        if item:
+            results.append(item)
+    return results
+
+
+def scan_gemini(root, file_cache=None):
     results = []
     for path in source_files(root, ".json"):
-        if not path.name.startswith("session-"):
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            continue
-        for message in data.get("messages", []):
-            if message.get("type") != "gemini":
-                continue
-            item = event("Gemini", message.get("model"), message.get("timestamp"), data.get("sessionId") or path.stem,
-                         message.get("tokens") or {}, "Gemini CLI")
-            if item:
-                results.append(item)
+        if path.name.startswith("session-"):
+            results.extend(file_cache.read("gemini-v1", path, _scan_gemini_file) if file_cache else _scan_gemini_file(path))
     return results
 
 
@@ -186,9 +287,9 @@ def scan_opencode(root):
     """Read OpenCode V1/V2 assistant usage from a read-only SQLite connection."""
     results = []
     explicit = os.environ.get("OPENCODE_DB_PATH")
-    paths = [Path(explicit).expanduser()] if explicit else source_files(root, ".db")
+    paths = [root] if root.is_file() else source_files(root, ".db")
     for path in paths:
-        if (not explicit and not path.name.startswith("opencode")) or path.name == "opencode-auth.db":
+        if (not explicit and not root.is_file() and not path.name.startswith("opencode")) or path.name == "opencode-auth.db":
             continue
         try:
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
@@ -290,24 +391,45 @@ def scan_opencode(root):
     return results
 
 
-def scan(enabled=None, roots=None):
+def scan(enabled=None, roots=None, cache_path=None):
     enabled = list(SOURCES) if enabled is None else enabled
-    roots = roots or SOURCES
-    events, connections = [], []
+    roots = roots or {}
+    events, connections, seen_events = [], [], set()
     limit = None
-    for source, title, scanner in (("claude", "Claude Code", scan_claude),
-                                   ("codex", "Codex CLI", scan_codex),
-                                   ("gemini", "Gemini CLI", scan_gemini),
-                                   ("opencode", "OpenCode", scan_opencode)):
-        root = Path(os.environ["OPENCODE_DB_PATH"]).expanduser() if source == "opencode" and os.environ.get("OPENCODE_DB_PATH") else Path(roots.get(source, SOURCES[source]))
-        active = source in enabled
-        found = root.exists()
-        if active and found:
-            if source == "codex":
-                batch, limit = scanner(root)
-            else:
-                batch = scanner(root)
-            events.extend(batch)
-        connections.append({"id": source, "name": title, "path": str(root), "enabled": active,
-                            "detected": found, "events": len(batch) if active and found else 0})
+    try:
+        file_cache = FileCache(cache_path) if cache_path else None
+    except (OSError, sqlite3.DatabaseError):
+        file_cache = None
+    try:
+        for source, title, scanner in (("claude", "Claude Code", scan_claude),
+                                       ("codex", "Codex CLI", scan_codex),
+                                       ("gemini", "Gemini CLI", scan_gemini),
+                                       ("opencode", "OpenCode", scan_opencode)):
+            paths = source_roots(source, roots.get(source))
+            active = source in enabled
+            count = 0
+            for root in paths:
+                if active and root.exists():
+                    if source == "codex":
+                        batch, found_limit = scanner(root, file_cache)
+                        if found_limit and (not limit or found_limit["recorded_at"] > limit["recorded_at"]):
+                            limit = found_limit
+                    elif source == "opencode":
+                        batch = scanner(root)
+                    else:
+                        batch = scanner(root, file_cache)
+                    for item in batch:
+                        identity = (item["source"], item["provider"], item["session"], item["timestamp"],
+                                    item["model"], item["input"], item["output"], item["cache_read"], item["cache_write"],
+                                    item.get("reasoning", 0))
+                        if identity not in seen_events:
+                            seen_events.add(identity)
+                            events.append(item)
+                            count += 1
+            connections.append({"id": source, "name": title, "path": "; ".join(map(str, paths)),
+                                "paths": [str(path) for path in paths], "enabled": active,
+                                "detected": any(path.exists() for path in paths), "events": count})
+    finally:
+        if file_cache:
+            file_cache.close()
     return events, connections, limit

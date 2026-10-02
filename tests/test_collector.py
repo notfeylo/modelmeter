@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tallybeam.collector import scan_claude, scan_codex, scan_gemini
+from tallybeam.collector import FileCache, scan_claude, scan_codex, scan_gemini, source_roots
 
 
 class CollectorTests(unittest.TestCase):
@@ -44,6 +44,42 @@ class CollectorTests(unittest.TestCase):
             event = scan_gemini(root)[0]
             self.assertEqual(event["total"], 115)
             self.assertEqual(event["cache_read"], 20)
+
+    def test_cached_source_updates_when_file_changes_and_deduplicates_copies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "session.jsonl"
+            row = {"type": "assistant", "timestamp": "2026-10-01T12:00:00Z", "sessionId": "s",
+                   "message": {"id": "one", "model": "m", "content": "private prompt text", "usage": {"input_tokens": 1}}}
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            cache_path = root / "cache" / "events.sqlite3"
+            cache = FileCache(cache_path)
+            self.assertEqual(scan_claude(root, cache)[0]["total"], 1)
+            cache.close()
+            self.assertNotIn(b"private prompt text", cache_path.read_bytes())
+            (root / "copy.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            row["message"]["id"] = "two"
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(row) + "\n")
+            cache = FileCache(cache_path)
+            self.assertEqual(len(scan_claude(root, cache)), 2)
+            cache.close()
+
+    def test_codex_home_override_is_checked(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict("os.environ", {"CODEX_HOME": directory}):
+                self.assertIn(Path(directory) / "sessions", source_roots("codex"))
+                self.assertIn(Path(directory) / "archived_sessions", source_roots("codex"))
+
+    def test_opencode_extra_path_remains_with_override(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            primary = root / "primary.db"
+            alternate = root / "alternate.db"
+            with patch.dict("os.environ", {"OPENCODE_DB_PATH": str(primary)}):
+                self.assertEqual(source_roots("opencode", [alternate]), [primary, alternate])
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ export function HeroSection({ payload, metric }: HeroSectionProps) {
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
             {t("hero.description")}
           </p>
-          {payload.providers.some(item => item.name === "Codex") && limit && typeof limit.used_percent === "number" && (!limit.resets_at || limit.resets_at * 1000 > new Date(payload.meta.generatedAt).getTime()) && <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={limit.recorded_at ? `Last recorded ${new Date(limit.recorded_at).toLocaleString()}` : undefined}>
+          {payload.meta.hasCodexUsage && limit && typeof limit.used_percent === "number" && (!limit.resets_at || limit.resets_at * 1000 > new Date(payload.meta.generatedAt).getTime()) && <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={limit.recorded_at ? `Last recorded ${new Date(limit.recorded_at).toLocaleString()}` : undefined}>
             <span className="size-1.5 rounded-full bg-primary" />
             <span>Recorded Codex 5h limit: <strong>{Math.max(0, 100 - limit.used_percent).toFixed(0)}% remaining</strong></span>
             {limit.resets_at && <span className="text-muted-foreground">· resets {new Date(limit.resets_at * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}

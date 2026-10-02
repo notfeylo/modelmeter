@@ -9,6 +9,24 @@ FIELDS = ("total", "active", "input", "output", "reasoning", "cache_read", "cach
           "cache_miss", "cache_expected", "cache_hit_rate", "runtime", "runtime_dedup", "user_message_count")
 
 
+def provider_name(event):
+    """Group a tool's recorded provider under its owner, without changing the source record."""
+    raw = str(event.get("provider") or "Unknown").strip()
+    source = str(event.get("source") or "")
+    if source == "Claude Code":
+        return "Anthropic"
+    if source == "Codex CLI":
+        return "OpenAI"
+    if source == "Gemini CLI":
+        return "Google"
+    aliases = {"claude": "Anthropic", "anthropic": "Anthropic",
+               "codex": "OpenAI", "openai": "OpenAI",
+               "gemini": "Google", "google": "Google",
+               "grok": "xAI", "xai": "xAI",
+               "antigravity": "Antigravity", "google-antigravity": "Antigravity"}
+    return aliases.get(raw.casefold(), raw)
+
+
 def empty():
     return {field: 0 for field in FIELDS}
 
@@ -76,13 +94,13 @@ def _range_days(events, range_value):
     return [(first + timedelta(days=i)).isoformat() for i in range((today - first).days + 1)]
 
 
-def usage_payload(all_events, range_value="30", model="all"):
+def usage_payload(all_events, range_value="30", model="all", provider="all"):
     if range_value not in ("7", "30", "90", "180", "365", "all"):
         range_value = "30"
-    available_models = sorted({str(e["model"]) for e in all_events})
-    if model != "all" and model not in available_models:
-        model = "all"
-    scoped_events = all_events if model == "all" else [e for e in all_events if e["model"] == model]
+    available_providers = sorted({provider_name(e) for e in all_events})
+    provider_events = all_events if provider == "all" else [e for e in all_events if provider_name(e) == provider]
+    available_models = sorted({str(e["model"]) for e in provider_events})
+    scoped_events = provider_events if model == "all" else [e for e in provider_events if e["model"] == model]
     events = selected(scoped_events, range_value)
     day_names = _range_days(events, range_value)
     hourly_trend = range_value == "7"
@@ -105,18 +123,18 @@ def usage_payload(all_events, range_value="30", model="all"):
             metrics["cache_miss"] = miss
         add(summary, metrics)
         add(days[day_bucket], metrics)
-        model, provider = event["model"], event["provider"]
+        model, provider_label = event["model"], provider_name(event)
         add(models.setdefault(model, empty()), metrics)
-        add(providers.setdefault(provider, empty()), metrics)
-        pm = (provider, model)
+        add(providers.setdefault(provider_label, empty()), metrics)
+        pm = (provider_label, model)
         add(provider_models.setdefault(pm, empty()), metrics)
         add(trends.setdefault(pm, {}).setdefault(date, empty()), metrics)
         bucket = f"{date}T{local.hour // 2 * 2:02d}" if hourly else date
         add(heat.setdefault(bucket, empty()), metrics)
         if event.get("runtime_start") is not None and event.get("runtime_end") is not None:
             interval = (event["runtime_start"], event["runtime_end"])
-            for name in ("summary", f"day:{day_bucket}", f"model:{model}", f"provider:{provider}",
-                         f"pm:{provider}\0{model}", f"trend:{provider}\0{model}\0{date}", f"heat:{bucket}"):
+            for name in ("summary", f"day:{day_bucket}", f"model:{model}", f"provider:{provider_label}",
+                         f"pm:{provider_label}\0{model}", f"trend:{provider_label}\0{model}\0{date}", f"heat:{bucket}"):
                 intervals[name].append(interval)
     for date in day_names:
         if hourly:
@@ -150,7 +168,9 @@ def usage_payload(all_events, range_value="30", model="all"):
                  "availableFirstDay": min(local_days) if local_days else None,
                  "availableLastDay": max(local_days) if local_days else None, "range": range_value,
                  "assistantMessageCount": len(events), "scannedRows": len(scoped_events),
-                 "model": model, "availableModels": available_models},
+                 "model": model, "provider": provider, "availableModels": available_models,
+                 "availableProviders": available_providers,
+                 "hasCodexUsage": any(e.get("source") == "Codex CLI" for e in scoped_events)},
         "summary": summary,
         "days": [{"date": day, **days[day]} for day in day_buckets],
         "models": [named(k, v) for k, v in sorted(models.items(), key=lambda x: x[1]["total"], reverse=True)],

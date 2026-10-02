@@ -29,12 +29,15 @@ import { LoadingBreadcrumb } from "@/components/ui/animated-loading-svg-text-shi
 import { useTheme } from "@/components/theme-provider";
 import { useLocale } from "@/lib/i18n";
 
+const PROVIDER_OPTIONS = ["OpenAI", "Anthropic", "Google", "Antigravity", "xAI", "OpenCode"];
+
 export function App() {
   const [range, setRange] = useState("30");
   const [metric, setMetric] = useState<MetricKey>("total");
+  const [provider, setProvider] = useState("all");
   const [model, setModel] = useState("all");
   const [missExplorer, setMissExplorer] = useState<{ open: boolean; date: string | null }>({ open: false, date: null });
-  const { data, loading, error, refresh } = useUsage(range, model);
+  const { data, loading, error, refresh } = useUsage(range, provider, model);
   const { theme, setTheme } = useTheme();
   const { t } = useLocale();
 
@@ -95,6 +98,17 @@ export function App() {
           {/* Metric selector + Refresh + Theme — wraps on mobile */}
           <div className="flex flex-wrap items-center gap-2">
             <ConnectionsDialog onChanged={refresh} />
+            <Select value={provider} onValueChange={(value) => { setProvider(value); setModel("all"); }}>
+              <SelectTrigger className="h-8 min-w-[150px] rounded-lg text-sm" aria-label="Filter by provider">
+                <SelectValue placeholder="All providers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All providers</SelectItem>
+                {[...new Set([...PROVIDER_OPTIONS, ...(data?.meta.availableProviders || [])])].map((name) =>
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
             <Select value={model} onValueChange={setModel}>
               <SelectTrigger className="h-8 min-w-[175px] max-w-[270px] rounded-lg text-sm" aria-label="Filter by model">
                 <SelectValue placeholder="All models" />
@@ -144,8 +158,9 @@ export function App() {
 
           </div>
         </div>
-        {loading && <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2" role="status" aria-live="polite"><LoadingBreadcrumb text={data ? "Refreshing usage" : "Reading local usage"} /><span className="text-xs text-muted-foreground">{model === "all" ? "All models" : model}</span></div>}
+        {loading && <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2" role="status" aria-live="polite"><LoadingBreadcrumb text={data ? "Refreshing usage" : "Reading local usage"} /><span className="text-xs text-muted-foreground">{provider === "all" ? "All providers" : provider} · {model === "all" ? "All models" : model}</span></div>}
         {error && data && <p className="mt-2 text-xs text-destructive" role="alert">Refresh failed: {error}. Showing the last loaded snapshot.</p>}
+        {!loading && data && data.summary.total === 0 && <p className="mt-2 rounded-lg border border-border bg-secondary/20 px-3 py-2 text-xs text-muted-foreground" role="status">No recorded token usage for this selection. Modelmeter shows only counters found in local session logs or imported rows.</p>}
 
         {/* Subtle separator between controls and content */}
         <div className="mt-4 mb-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
@@ -219,6 +234,7 @@ export function App() {
         open={missExplorer.open}
         onOpenChange={(o) => setMissExplorer((prev) => ({ ...prev, open: o }))}
         range={range}
+        provider={provider}
         model={model}
         date={missExplorer.date}
       />

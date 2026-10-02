@@ -4,9 +4,9 @@ Modelmeter runs entirely on the local machine. The Python standard-library HTTP 
 
 The Windows installer bundles a Tauri 2 desktop shell and a frozen Python API process. Tauri starts the Python process on a free loopback port, waits for its health endpoint, and opens that local dashboard in the system WebView2 runtime. Its window has no system title bar; the dashboard supplies the translucent title strip and controls. Closing the window stops the Python process. The source command `python -m tallybeam.app` continues to open the dashboard in a browser.
 
-Local collectors read Claude Code, Codex CLI, Gemini CLI and OpenCode usage metadata. OpenCode SQLite files are opened read-only. V1 `message` and V2 `session_message` data are selected by the table with more rows, so migration residue in the other table is not counted twice. Session metadata resolves from both `session` and `session_v2`; child sessions contribute tokens but not runtime. An explicit `OPENCODE_DB_PATH` limits OpenCode collection to one database. CSV imports are saved to `~/.tallybeam/tallybeam.sqlite3`. No prompts, responses, API keys or cookies are stored or returned by the API.
+Local collectors read Claude Code, Codex CLI, Gemini CLI and OpenCode usage metadata. They check default session locations, supported tool home overrides, and user-added session folders. They do not crawl arbitrary project files, because output artifacts do not contain reliable token counters. OpenCode SQLite files are opened read-only. V1 `message` and V2 `session_message` data are selected by the table with more rows, so migration residue in the other table is not counted twice. Session metadata resolves from both `session` and `session_v2`; child sessions contribute tokens but not runtime. An explicit `OPENCODE_DB_PATH` limits OpenCode collection to one database. CSV imports are saved to `~/.tallybeam/tallybeam.sqlite3`. Parsed usage metadata is cached by source file size and modification time in `~/.tallybeam/source-cache.sqlite3`, so only changed transcript files need parsing on subsequent launches. Prompts, responses, API keys, and cookies are never cached or returned by the API.
 
-The server keeps a short in-memory snapshot of normalized usage events. `/api/usage` aggregates that snapshot into day or hour buckets, model/provider totals, heatmap data and runtime. `/api/cache-miss/sessions` and `/api/cache-miss/session/{id}` expose only token counters and timestamps for the drilldown. The frontend fetches JSON from the same origin, so no remote service or CORS setting is needed.
+The server keeps a short in-memory snapshot of normalized usage events. `/api/usage` aggregates that snapshot into day or hour buckets, model/provider totals, heatmap data and runtime; provider and model filters apply before aggregation. `/api/cache-miss/sessions` and `/api/cache-miss/session/{id}` expose only token counters and timestamps for the drilldown. The frontend fetches JSON from the same origin, so no remote service or CORS setting is needed.
 
 The source layout follows the reference dashboard's component, hook and i18n organization while separating the Python runtime and optional Rust indexer:
 
@@ -14,7 +14,7 @@ The source layout follows the reference dashboard's component, hook and i18n org
 tallybeam/
 ├── frontend/src/components/     dashboard cards, charts and dialogs
 ├── frontend/src/hooks/          API hooks
-├── frontend/src/lib/i18n/       English and Chinese labels
+├── frontend/src/lib/i18n/       English labels and retained translation structure
 ├── tallybeam/                   Python collectors, aggregation and server
 ├── tallybeam/static/            committed production UI bundle
 ├── src-tauri/                   Windows desktop shell and window lifecycle

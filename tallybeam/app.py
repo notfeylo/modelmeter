@@ -17,11 +17,12 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .collector import scan, source_signature, timestamp, number
-from .usage import usage_payload, cache_miss_sessions, cache_miss_detail
+from .usage import usage_payload, cache_miss_sessions, cache_miss_detail, provider_name
 
 DATA = Path.home() / ".tallybeam"
 DB = DATA / "tallybeam.sqlite3"
 CONFIG = DATA / "config.json"
+SOURCE_CACHE = DATA / "source-cache.sqlite3"
 lock = threading.Lock()
 cache = {"at": 0, "signature": None, "events": [], "connections": [], "limits": None}
 
@@ -29,11 +30,34 @@ cache = {"at": 0, "signature": None, "events": [], "connections": [], "limits": 
 def config():
     try:
         data = json.loads(CONFIG.read_text(encoding="utf-8"))
-        if isinstance(data.get("enabled"), list):
+        if isinstance(data, dict) and isinstance(data.get("enabled"), list):
             return data
     except (OSError, ValueError):
         pass
     return {"enabled": ["claude", "codex", "gemini", "opencode"]}
+
+
+def configured_paths(settings):
+    paths = settings.get("paths") or {}
+    if not isinstance(paths, dict):
+        return {}
+    result = {}
+    for source in ("claude", "codex", "gemini", "opencode"):
+        values = paths.get(source)
+        if not isinstance(values, list):
+            continue
+        safe = []
+        for value in values[:8]:
+            if not isinstance(value, str) or len(value) > 500:
+                continue
+            try:
+                path = Path(value).expanduser()
+                if path.is_absolute() and path != Path(path.anchor):
+                    safe.append(str(path))
+            except (OSError, ValueError):
+                continue
+        result[source] = safe
+    return result
 
 
 def database():
@@ -53,10 +77,12 @@ def imported():
 def refresh(force=False):
     with lock:
         if force or time.monotonic() - cache["at"] > 20:
-            enabled = config()["enabled"]
-            signature = (source_signature(enabled), DB.stat().st_mtime_ns if DB.exists() else None)
+            settings = config()
+            enabled = settings["enabled"]
+            paths = configured_paths(settings)
+            signature = (source_signature(enabled, paths), DB.stat().st_mtime_ns if DB.exists() else None)
             if signature != cache["signature"]:
-                events, connections, limits = scan(enabled)
+                events, connections, limits = scan(enabled, paths, SOURCE_CACHE)
                 cache.update(signature=signature, events=events + imported(), connections=connections, limits=limits)
             cache["at"] = time.monotonic()
         return dict(cache)
@@ -67,14 +93,14 @@ def overview(days=30, provider="all"):
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
     events = [e for e in state["events"] if datetime.fromisoformat(e["timestamp"]) >= since and
-              (provider == "all" or e["provider"].lower() == provider.lower())]
+              (provider == "all" or provider_name(e).casefold() == provider.casefold())]
     daily, hourly, providers, models = defaultdict(lambda: {"tokens": 0, "messages": 0}), defaultdict(int), Counter(), Counter()
     for e in events:
         day = e["timestamp"][:10]
         daily[day]["tokens"] += e["total"]
         daily[day]["messages"] += 1
         hourly[e["timestamp"][:13]] += e["total"]
-        providers[e["provider"]] += e["total"]
+        providers[provider_name(e)] += e["total"]
         models[e["model"]] += e["total"]
     points = []
     for offset in range(days - 1, -1, -1):
@@ -87,7 +113,14 @@ def overview(days=30, provider="all"):
             "breakdown": {k: sum(e[k] for e in events) for k in ("input", "output", "cache_read", "cache_write")},
             "daily": points, "hourly": [{"hour": k, "tokens": v} for k, v in sorted(hourly.items())],
             "providers": providers, "models": models.most_common(8),
-            "connections": state["connections"] + [{"id": "grok", "name": "Grok / xAI", "path": "CSV import", "enabled": True, "detected": any(e["provider"] == "Grok" for e in state["events"]), "events": sum(e["provider"] == "Grok" for e in state["events"])}],
+            "connections": state["connections"] + [
+                {"id": "grok", "name": "Grok / xAI", "path": "CSV import", "enabled": True,
+                 "detected": any(provider_name(e) == "xAI" for e in state["events"]),
+                 "events": sum(provider_name(e) == "xAI" for e in state["events"])},
+                {"id": "antigravity", "name": "Antigravity", "path": "CSV import; no verified local token source", "enabled": True,
+                 "detected": any(provider_name(e) == "Antigravity" for e in state["events"]),
+                 "events": sum(provider_name(e) == "Antigravity" for e in state["events"])}],
+            "customPaths": configured_paths(config()),
             "codex_limits": state["limits"],
             "sessions": sessions(events)[:30]}
 
@@ -131,7 +164,8 @@ class Handler(BaseHTTPRequestHandler):
             params = parse_qs(uri.query)
             value = params.get("range", ["30"])[0]
             model = params.get("model", ["all"])[0][:120]
-            return self.respond(usage_payload(refresh()["events"], value, model))
+            provider = params.get("provider", ["all"])[0][:80]
+            return self.respond(usage_payload(refresh()["events"], value, model, provider))
         if uri.path == "/api/limits":
             return self.respond({"codex": refresh()["limits"]})
         if uri.path == "/api/cache-miss/sessions":
@@ -141,7 +175,10 @@ class Handler(BaseHTTPRequestHandler):
                 value = "30"
             day = params.get("date", [None])[0]
             model = params.get("model", ["all"])[0][:120]
+            provider = params.get("provider", ["all"])[0][:80]
             events = refresh()["events"]
+            if provider != "all":
+                events = [event for event in events if provider_name(event) == provider]
             if model != "all":
                 events = [event for event in events if event["model"] == model]
             return self.respond(cache_miss_sessions(events, value, day))
@@ -156,9 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 days = 30
             days = max(1, min(days, 365))
-            provider = params.get("provider", ["all"])[0]
-            if provider.lower() not in ("all", "claude", "codex", "gemini", "grok", "opencode"):
-                provider = "all"
+            provider = params.get("provider", ["all"])[0][:80]
             return self.respond(overview(days, provider))
         if uri.path == "/api/health":
             return self.respond({"ok": True, "service": "tallybeam", "version": __version__})
@@ -208,7 +243,28 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(enabled, list) or any(x not in ("claude", "codex", "gemini", "opencode") for x in enabled):
                 return self.respond({"error": "Invalid connections"}, 400)
             DATA.mkdir(exist_ok=True)
-            CONFIG.write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
+            settings = config()
+            settings["enabled"] = enabled
+            CONFIG.write_text(json.dumps(settings), encoding="utf-8")
+            refresh(True)
+            return self.respond({"ok": True})
+        if self.path == "/api/source-paths":
+            source = data.get("source") if isinstance(data, dict) else None
+            paths = data.get("paths") if isinstance(data, dict) else None
+            if source not in ("claude", "codex", "gemini", "opencode") or not isinstance(paths, list) or len(paths) > 8:
+                return self.respond({"error": "Choose a supported source and up to 8 folders"}, 400)
+            clean = []
+            for value in paths:
+                if not isinstance(value, str) or len(value) > 500:
+                    return self.respond({"error": "Invalid source path"}, 400)
+                path = Path(value).expanduser()
+                if not path.is_absolute() or path == Path(path.anchor) or not path.exists() or (source != "opencode" and not path.is_dir()):
+                    return self.respond({"error": "Choose an existing session folder or OpenCode database"}, 400)
+                clean.append(str(path.resolve()))
+            settings = config()
+            settings.setdefault("paths", {})[source] = list(dict.fromkeys(clean))
+            DATA.mkdir(exist_ok=True)
+            CONFIG.write_text(json.dumps(settings), encoding="utf-8")
             refresh(True)
             return self.respond({"ok": True})
         if self.path == "/api/import":
@@ -220,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond({"error": f"Invalid row {i+1}"}, 400)
                 when = timestamp(row.get("timestamp"))
                 provider = str(row.get("provider", ""))[:40].strip()
-                if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other") or not when:
+                if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other", "OpenAI", "Anthropic", "Google", "Antigravity", "xAI") or not when:
                     return self.respond({"error": f"Invalid provider or timestamp in row {i+1}"}, 400)
                 values = [number(row.get(k)) for k in ("input", "output", "cache_read", "cache_write")]
                 ident = str(row.get("id") or f"{provider}:{row.get('session')}:{when}:{i}")[:200]

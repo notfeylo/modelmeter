@@ -9,11 +9,21 @@ A desktop-local dashboard for token usage across AI coding tools. It reads usage
 - Cache miss estimates by provider/model with a clickable session and per-message lifecycle view.
 - OpenCode runtime and deduplicated runtime from recorded start/end times.
 - English labels and dark, light, and system theme modes.
-- Local source controls, CSV import, and recorded Codex rate-limit use/remaining/reset windows.
-- A model selector that recalculates the summary and every chart for one model at a time.
+- Local source controls, additional session folders, CSV import, and recorded Codex rate-limit use/remaining/reset windows.
+- Provider and model selectors that recalculate the summary and every chart for one source owner or model at a time.
 - A visible loading state for refreshes and a provider chart with direct percentages.
 
 See [metric definitions](docs/metrics.md) and [architecture](docs/architecture.md) for what each source can actually supply.
+
+## Screenshots
+
+These are exact crops of the supplied Modelmeter 0.5.1 desktop screenshots. The current provider controls and metric labels may differ.
+
+![Modelmeter overview and activity heatmap](docs/screenshots/overview.png)
+
+![Daily trend, model contribution, and provider distribution](docs/screenshots/trends.png)
+
+![Cache reuse analysis and source count](docs/screenshots/cache-reuse.png)
 
 ## Download for Windows
 
@@ -51,19 +61,20 @@ On macOS or Linux use the `tallybeam-indexer` binary without `.exe`.
 
 | Source | Connection | Token usage | Remaining/reset |
 | --- | --- | --- | --- |
-| Claude Code | Existing local sessions in `~/.claude/projects` | Yes | Subscription quota unavailable from local records |
-| Codex CLI | Existing local sessions in `~/.codex/sessions` | Yes | Rate-limit percent and reset when recorded by Codex |
-| Gemini CLI | Existing local sessions in `~/.gemini/tmp` | Yes | Account quota unavailable from local records |
+| Claude Code | Existing local sessions in `~/.claude/projects` or `CLAUDE_CONFIG_DIR/projects` | Yes | Subscription quota unavailable from local records |
+| Codex CLI | Existing local sessions and archived sessions in `~/.codex` or `CODEX_HOME` | Yes | Rate-limit percent and reset when recorded by Codex |
+| Gemini CLI | Existing local sessions in `~/.gemini/tmp` or `GEMINI_CLI_HOME/.gemini/tmp` | Yes | Account quota unavailable from local records |
 | OpenCode | Existing local SQLite databases in `~/.local/share/opencode` | Yes | Depends on the underlying provider; unavailable from local records |
 | Grok / xAI | CSV import | Yes, if supplied | Unavailable unless your own export contains it; not currently imported |
+| Antigravity | CSV import | Yes, if supplied | No verified local token-counter source is currently supported |
 
-Modelmeter does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable. The model picker filters locally recorded events; it cannot add usage from another device or provider website.
+Modelmeter does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable. The provider and model pickers filter locally recorded events; they cannot add usage from another device or provider website. A provider without records displays zero. In **Connections**, add an existing session folder if a supported tool stores its logs elsewhere. Modelmeter checks those folders and supported environment overrides without crawling unrelated files across the computer. Files an agent created in a project do not reveal exact token counts.
 
 To use a specific OpenCode channel database, set `OPENCODE_DB_PATH` before launching, for example `$env:OPENCODE_DB_PATH = 'C:\path\to\opencode-local.db'`. Otherwise all `opencode*.db` files under the local OpenCode data directory are scanned.
 
 ## CSV import
 
-Choose a CSV in **Connections**. Required headers: `provider,model,timestamp,input,output`. Optional headers: `cache_read,cache_write,session,id`. Use ISO 8601 timestamps and provider names `Claude`, `Codex`, `Gemini`, `Grok`, `OpenCode`, or `Other`. Reimporting rows with the same `id` replaces them. The browser sends the parsed data only to the local server. Imported usage is saved in `~/.tallybeam/tallybeam.sqlite3`.
+Choose a CSV in **Connections**. Required headers: `provider,model,timestamp,input,output`. Optional headers: `cache_read,cache_write,session,id`. Use ISO 8601 timestamps and provider names `OpenAI`, `Anthropic`, `Google`, `Antigravity`, `xAI`, `Claude`, `Codex`, `Gemini`, `Grok`, `OpenCode`, or `Other`. Reimporting rows with the same `id` replaces them. The browser sends the parsed data only to the local server. Imported usage is saved in `~/.tallybeam/tallybeam.sqlite3`.
 
 Example:
 
@@ -75,9 +86,9 @@ Grok,grok-4,2026-10-01T12:00:00Z,1000,300,0,0,project-a,request-1
 ## Privacy
 
 - The server binds to `127.0.0.1` only. There is no cloud account or telemetry.
-- The collector parses local session files and keeps only usage metadata in memory. Prompts and responses are never served to the browser or saved by Modelmeter.
+- The collector parses local session files and stores only normalized usage metadata in a local SQLite cache (`~/.tallybeam/source-cache.sqlite3`) to speed repeat launches. It never saves prompts or responses in the cache or serves them to the browser.
 - OpenCode databases are opened read-only. The session detail shows usage counters and timing, never message content.
-- Local-source toggles are stored in `~/.tallybeam/config.json`.
+- Local-source toggles and additional session paths are stored in `~/.tallybeam/config.json`.
 - `POST /api/import` accepts up to 5,000 rows and 2 MB per import. Browser requests from other origins are rejected.
 
 ## Develop and verify
@@ -112,7 +123,7 @@ The interface uses React, TypeScript, Tailwind, and Recharts. Built assets are c
 
 - Local CLI session history can be deleted or rotated by its owner; Modelmeter can only show retained records.
 - Token counts may differ from billing usage due to cache, tools, and provider accounting. Modelmeter uses the metadata stored by each tool.
-- The cache miss chart estimates gaps between consecutive requests in one session/model when prior cache usage is present. It is not a billing or provider reported number.
+- The cache reuse gap chart estimates differences between consecutive recorded requests in one session/model when prior cache usage is present. It is not a billing or provider reported number. No ML or RAG guess is substituted for missing token counters.
 - Runtime metrics are available only for sources with recorded start/end intervals, currently OpenCode. Other sources show zero rather than an invented duration.
 - Gemini and Grok web/app usage is not automatically available through these local session sources.
 - Source formats can change across tool versions. Please open an issue with a redacted sample of the usage metadata when a parser stops working.

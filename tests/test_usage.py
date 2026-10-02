@@ -108,6 +108,30 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(len(result["models"]), 1)
         self.assertEqual(result["meta"]["availableModels"], ["opus", "sonnet"])
 
+    def test_provider_filter_uses_recorded_owner_and_limits_models(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [dict(provider=provider, model=model, session=model, source=source, timestamp=now,
+                     input=amount, output=0, cache_read=0, cache_write=0, total=amount)
+                for provider, model, source, amount in (("Claude", "opus", "Claude Code", 2),
+                                                        ("Codex", "gpt", "Codex CLI", 3),
+                                                        ("openrouter", "other", "OpenCode", 4))]
+        result = usage_payload(rows, "7", "all", "OpenAI")
+        self.assertEqual(result["summary"]["total"], 3)
+        self.assertEqual(result["meta"]["availableModels"], ["gpt"])
+        self.assertEqual(result["meta"]["availableProviders"], ["Anthropic", "OpenAI", "openrouter"])
+        self.assertTrue(result["meta"]["hasCodexUsage"])
+        self.assertEqual([item["name"] for item in result["providers"]], ["OpenAI"])
+        self.assertEqual(usage_payload(rows, "7", "all", "Antigravity")["summary"]["total"], 0)
+
+    def test_single_recorded_token_lights_hourly_heatmap_bucket(self):
+        now = datetime.now(timezone.utc)
+        row = dict(provider="Claude", model="m", session="s", source="Claude Code",
+                   timestamp=now.isoformat(), input=1, output=0, cache_read=0, cache_write=0, total=1)
+        result = usage_payload([row], "7")
+        bucket = f"{now.astimezone().date().isoformat()}T{now.astimezone().hour // 2 * 2:02d}"
+        self.assertEqual(next(item["total"] for item in result["heatmap"]["data"] if item["date"] == bucket), 1)
+        self.assertEqual(result["summary"]["total"], 1)
+
     def test_runtime_merge_and_compaction_pairing(self):
         now = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         def row(offset, model, read, compacted=False):

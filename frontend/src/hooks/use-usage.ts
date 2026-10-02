@@ -30,7 +30,7 @@ function enrichPayload(payload: UsagePayload): UsagePayload {
   return payload;
 }
 
-export function useUsage(range: string, model: string) {
+export function useUsage(range: string, provider: string, model: string) {
   const [data, setData] = useState<UsagePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +48,7 @@ export function useUsage(range: string, model: string) {
         }
         const url = new URL("/api/usage", window.location.origin);
         url.searchParams.set("range", range);
+        if (provider !== "all") url.searchParams.set("provider", provider);
         if (model !== "all") url.searchParams.set("model", model);
         if (force) url.searchParams.set("_t", String(Date.now()));
 
@@ -62,7 +63,7 @@ export function useUsage(range: string, model: string) {
         if (id === requestId.current) setLoading(false);
       }
     },
-    [range, model],
+    [range, provider, model],
   );
 
   useEffect(() => {

@@ -24,7 +24,7 @@ const BLOCK_COUNT = 12;
 const HOURS_PER_BLOCK = 2;
 
 /** Intensity → primary-color opacity via color-mix (level 0 = muted bg). */
-const LEVEL_PCT = [0, 22, 42, 62, 82, 100];
+const LEVEL_PCT = [0, 38, 52, 66, 83, 100];
 
 const HOURLY_RE = /T\d{2}$/;
 
@@ -122,7 +122,7 @@ function intlLocale(locale: Locale): string {
 const EMPTY_HEATMAP: HeatmapPayload = { granularity: "daily", intervalHours: 24, data: [] };
 
 const CELL_CLASS =
-  "rounded-[3px] border border-border/40 outline-none transition-all duration-100 hover:scale-110 hover:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary data-[level=0]:bg-muted/55";
+  "rounded-[3px] border border-border/40 outline-none transition-all duration-100 hover:scale-110 hover:border-primary/60 focus-visible:ring-1 focus-visible:ring-primary data-[level=0]:bg-muted/55 data-[level=1]:border-primary/35";
 
 // ── Main Component ───────────────────────────────────────────────────────
 

@@ -7,10 +7,10 @@ function getLocale(): Locale {
 }
 
 export function useCacheMissSessions(
-  params: { range: string; model: string; date?: string },
+  params: { range: string; provider: string; model: string; date?: string },
   open: boolean,
 ) {
-  const { range, model, date } = params;
+  const { range, provider, model, date } = params;
   const [data, setData] = useState<CacheMissSessionsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +21,7 @@ export function useCacheMissSessions(
     try {
       const url = new URL("/api/cache-miss/sessions", window.location.origin);
       url.searchParams.set("range", range);
+      if (provider !== "all") url.searchParams.set("provider", provider);
       if (model !== "all") url.searchParams.set("model", model);
       if (date) url.searchParams.set("date", date);
       const res = await fetch(url);
@@ -32,7 +33,7 @@ export function useCacheMissSessions(
     } finally {
       setLoading(false);
     }
-  }, [range, model, date]);
+  }, [range, provider, model, date]);
 
   useEffect(() => {
     if (open) fetchData();

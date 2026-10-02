@@ -1,6 +1,6 @@
 [project]
 name = "tallybeam"
-version = "0.5.1"
+version = "0.6.0"
 description = "Local-first AI token usage dashboard"
 requires-python = ">=3.10"
 
