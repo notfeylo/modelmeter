@@ -1,4 +1,4 @@
-param([string]$Executable = "src-tauri\target\release\Tallybeam.exe")
+param([string]$Executable = "src-tauri\target\release\Modelmeter.exe")
 
 $ErrorActionPreference = "Stop"
 $appPath = (Resolve-Path -LiteralPath $Executable).Path
@@ -13,7 +13,7 @@ try {
             $port = $Matches[1]
             $result = Invoke-RestMethod "http://127.0.0.1:$port/api/health" -TimeoutSec 1
             $app.Refresh()
-            if ($result.ok -eq $true -and $result.version -eq "0.4.1" -and $app.MainWindowTitle -eq "Tallybeam") {
+            if ($result.ok -eq $true -and $result.version -eq "0.5.0" -and $app.MainWindowTitle -eq "Modelmeter") {
                 $healthy = $true
                 break
             }

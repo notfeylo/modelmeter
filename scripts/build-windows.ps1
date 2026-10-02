@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.4.1",
+    [string]$Version = "0.5.0",
     [string]$Iscc = "",
     [string]$Python = "python"
 )
@@ -45,7 +45,7 @@ try {
     if (-not $Iscc) { throw "ISCC.exe not found. Install Inno Setup 6 or pass -Iscc." }
     & $Iscc "/DAppVersion=$Version" "installer/tallybeam.iss"
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
-    Write-Host "Installer: $root\dist\Tallybeam-Setup-$Version-win-x64.exe"
+    Write-Host "Installer: $root\dist\Modelmeter-Setup-$Version-win-x64.exe"
 } finally {
     Pop-Location
 }

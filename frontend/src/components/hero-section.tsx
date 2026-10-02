@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { UsagePayload, MetricKey } from "@/types";
 import {
   formatDateLabel,
-  formatDateTime,
   formatMetricValue,
   getRangeLabel,
 } from "@/lib/format";
@@ -36,23 +35,16 @@ export function HeroSection({ payload, metric }: HeroSectionProps) {
 
       <div className="relative grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
         <div className="animate-slide-up">
-          <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-chart-2/20 bg-chart-2/5 px-2.5 py-0.5">
-            <ActivityIcon className="size-3 text-chart-2" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-chart-2">
-              Tallybeam Usage Monitor
-            </span>
-          </div>
           <h1 className="text-xl font-bold leading-tight tracking-tight text-foreground md:text-4xl">
-            Tokens{" "}
-            <span className="accent-gradient-text">{t("hero.dashboard")}</span>
+            <span className="accent-gradient-text">Modelmeter</span>
           </h1>
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
             {t("hero.description")}
           </p>
-          {limit && typeof limit.used_percent === "number" && (!limit.resets_at || limit.resets_at * 1000 > new Date(payload.meta.generatedAt).getTime()) && <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={limit.recorded_at ? `Last recorded ${new Date(limit.recorded_at).toLocaleString()}` : undefined}>
+          {payload.providers.some(item => item.name === "Codex") && limit && typeof limit.used_percent === "number" && (!limit.resets_at || limit.resets_at * 1000 > new Date(payload.meta.generatedAt).getTime()) && <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={limit.recorded_at ? `Last recorded ${new Date(limit.recorded_at).toLocaleString()}` : undefined}>
             <span className="size-1.5 rounded-full bg-primary" />
-            <span>Codex 5h limit: <strong>{Math.max(0, 100 - limit.used_percent).toFixed(0)}% remaining</strong></span>
-            {limit.resets_at && <span className="text-muted-foreground">· resets {new Date(limit.resets_at * 1000).toLocaleTimeString(locale === "zh" ? "zh-CN" : "en-US", { hour: "numeric", minute: "2-digit" })}</span>}
+            <span>Recorded Codex 5h limit: <strong>{Math.max(0, 100 - limit.used_percent).toFixed(0)}% remaining</strong></span>
+            {limit.resets_at && <span className="text-muted-foreground">· resets {new Date(limit.resets_at * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
           </div>}
         </div>
 
@@ -84,15 +76,6 @@ export function HeroSection({ payload, metric }: HeroSectionProps) {
         </div>
       </div>
 
-      <div className="relative mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground animate-fade-in stagger-3">
-        <span className="relative inline-block size-1.5">
-          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/40" />
-          <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
-        </span>
-        <span>
-          {t("hero.updatedAt")} {formatDateTime(meta.generatedAt, locale)} · {meta.timezone || "local"}
-        </span>
-      </div>
     </div>
   );
 }

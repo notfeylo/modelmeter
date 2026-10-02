@@ -14,7 +14,7 @@ export const en: Translations = {
     badge: "OpenCode Usage Monitor",
     title: "Tokens",
     dashboard: "Dashboard",
-    description: "Interactive charts for token consumption trends & model usage",
+    description: "See where your local AI usage goes, compare models, and understand cache behavior.",
     statRange: "Period",
     currentRange: "Range",
     assistantMessages: "recorded responses",

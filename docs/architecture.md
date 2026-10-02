@@ -1,6 +1,6 @@
 # Architecture
 
-Tallybeam runs entirely on the local machine. The Python standard-library HTTP server binds to `127.0.0.1` and serves the prebuilt React dashboard and JSON API. The React, TypeScript, Tailwind and Recharts source is under `frontend/`; `npm run build` writes static assets into `tallybeam/static/`. Python can run those committed assets without Node installed. The optional Rust program in `rust-indexer/` only accelerates local file discovery.
+Modelmeter runs entirely on the local machine. The Python standard-library HTTP server binds to `127.0.0.1` and serves the prebuilt React dashboard and JSON API. The React, TypeScript, Tailwind and Recharts source is under `frontend/`; `npm run build` writes static assets into `tallybeam/static/`. Python can run those committed assets without Node installed. The optional Rust program in `rust-indexer/` only accelerates local file discovery.
 
 The Windows installer bundles a Tauri 2 desktop shell and a frozen Python API process. Tauri starts the Python process on a free loopback port, waits for its health endpoint, and opens that local dashboard in the system WebView2 runtime. Its window has no system title bar; the dashboard supplies the translucent title strip and controls. Closing the window stops the Python process. The source command `python -m tallybeam.app` continues to open the dashboard in a browser.
 

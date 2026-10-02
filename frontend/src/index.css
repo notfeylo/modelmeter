@@ -196,6 +196,23 @@ html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
 }
+@keyframes loading-path-draw {
+    0% { stroke-dashoffset: var(--path-length); }
+    50% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: calc(var(--path-length) * -1); }
+}
+.loading-path { animation: loading-path-draw 2.5s ease-in-out infinite; }
+.loading-shimmer {
+    color: transparent;
+    background: linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%, var(--muted-foreground) 100%);
+    background-size: 200% auto;
+    background-clip: text;
+    animation: shimmer 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .loading-path, .loading-shimmer { animation: none; }
+    .loading-shimmer { color: var(--foreground); }
+}
 
 /* ── Dashboard Custom Utilities ─────────────────────── */
 @layer utilities {

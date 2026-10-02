@@ -96,6 +96,18 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(result["summary"]["total"], 0)
         self.assertEqual(len(result["days"]), 168)
 
+    def test_model_filter_recalculates_every_total(self):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [dict(provider="Claude", model=model, session=model, source="Claude Code", timestamp=now,
+                     input=amount, output=1, cache_read=0, cache_write=0, total=amount + 1)
+                for model, amount in (("sonnet", 10), ("opus", 20))]
+        result = usage_payload(rows, "7", "sonnet")
+        self.assertEqual(result["summary"]["total"], 11)
+        self.assertEqual(sum(day["total"] for day in result["days"]), 11)
+        self.assertEqual(result["models"][0]["name"], "sonnet")
+        self.assertEqual(len(result["models"]), 1)
+        self.assertEqual(result["meta"]["availableModels"], ["opus", "sonnet"])
+
     def test_runtime_merge_and_compaction_pairing(self):
         now = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
         def row(offset, model, read, compacted=False):

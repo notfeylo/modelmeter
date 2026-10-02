@@ -1,18 +1,18 @@
 #ifndef AppVersion
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.5.0"
 #endif
 
 [Setup]
 AppId={{66F20A87-4833-43EE-A505-3CF116BAEA40}
-AppName=Tallybeam
+AppName=Modelmeter
 AppVersion={#AppVersion}
-AppVerName=Tallybeam {#AppVersion}
+AppVerName=Modelmeter {#AppVersion}
 AppPublisher=notfeylo
-AppPublisherURL=https://github.com/notfeylo/tallybeam
-AppSupportURL=https://github.com/notfeylo/tallybeam/issues
-AppUpdatesURL=https://github.com/notfeylo/tallybeam/releases
-DefaultDirName={localappdata}\Programs\Tallybeam
-DefaultGroupName=Tallybeam
+AppPublisherURL=https://github.com/notfeylo/modelmeter
+AppSupportURL=https://github.com/notfeylo/modelmeter/issues
+AppUpdatesURL=https://github.com/notfeylo/modelmeter/releases
+DefaultDirName={localappdata}\Programs\Modelmeter
+DefaultGroupName=Modelmeter
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
@@ -20,9 +20,9 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=Tallybeam-Setup-{#AppVersion}-win-x64
+OutputBaseFilename=Modelmeter-Setup-{#AppVersion}-win-x64
 SetupIconFile=..\assets\tallybeam.ico
-UninstallDisplayIcon={app}\Tallybeam.exe
+UninstallDisplayIcon={app}\Modelmeter.exe
 LicenseFile=..\LICENSE
 Compression=lzma2
 SolidCompression=yes
@@ -35,21 +35,24 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
+Type: files; Name: "{app}\Tallybeam.exe"
+Type: files; Name: "{autoprograms}\Tallybeam.lnk"
+Type: files; Name: "{autodesktop}\Tallybeam.lnk"
 
 [Files]
-Source: "..\src-tauri\target\release\Tallybeam.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src-tauri\target\release\Modelmeter.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\TallybeamBackend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Tallybeam"; Filename: "{app}\Tallybeam.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Tallybeam"; Filename: "{app}\Tallybeam.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Modelmeter"; Filename: "{app}\Modelmeter.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\Modelmeter"; Filename: "{app}\Modelmeter.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft WebView2 Runtime..."; Check: WebView2Missing
-Filename: "{app}\Tallybeam.exe"; Description: "Launch Tallybeam"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Modelmeter.exe"; Description: "Launch Modelmeter"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function WebView2Missing(): Boolean;

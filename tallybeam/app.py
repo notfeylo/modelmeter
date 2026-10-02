@@ -128,8 +128,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         uri = urlparse(self.path)
         if uri.path == "/api/usage":
-            value = parse_qs(uri.query).get("range", ["30"])[0]
-            return self.respond(usage_payload(refresh()["events"], value))
+            params = parse_qs(uri.query)
+            value = params.get("range", ["30"])[0]
+            model = params.get("model", ["all"])[0][:120]
+            return self.respond(usage_payload(refresh()["events"], value, model))
         if uri.path == "/api/limits":
             return self.respond({"codex": refresh()["limits"]})
         if uri.path == "/api/cache-miss/sessions":
@@ -138,7 +140,11 @@ class Handler(BaseHTTPRequestHandler):
             if value not in ("7", "30", "90", "180", "365", "all"):
                 value = "30"
             day = params.get("date", [None])[0]
-            return self.respond(cache_miss_sessions(refresh()["events"], value, day))
+            model = params.get("model", ["all"])[0][:120]
+            events = refresh()["events"]
+            if model != "all":
+                events = [event for event in events if event["model"] == model]
+            return self.respond(cache_miss_sessions(events, value, day))
         if uri.path.startswith("/api/cache-miss/session/"):
             identity = uri.path.rsplit("/", 1)[-1]
             detail = cache_miss_detail(refresh()["events"], identity)

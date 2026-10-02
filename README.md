@@ -1,6 +1,6 @@
-# Tallybeam
+# Modelmeter
 
-A desktop-local dashboard for token usage across AI coding tools. It reads usage metadata from Claude Code, Codex CLI, Gemini CLI, and OpenCode sessions, and accepts CSV usage exports for Grok/xAI or other providers. The interface starts in a dark grey theme and uses Space Grotesk.
+A desktop-local dashboard for token usage across AI coding tools. It reads usage metadata from Claude Code, Codex CLI, Gemini CLI, and OpenCode sessions, and accepts CSV usage exports for Grok/xAI or other providers. The interface starts in a dark grey theme and uses Space Grotesk. The Python package and data directory retain the `tallybeam` identifier for upgrade compatibility.
 
 ## Features
 
@@ -8,16 +8,18 @@ A desktop-local dashboard for token usage across AI coding tools. It reads usage
 - Summary cards, input/output/cache composition, model leaderboard, and provider distribution.
 - Cache miss estimates by provider/model with a clickable session and per-message lifecycle view.
 - OpenCode runtime and deduplicated runtime from recorded start/end times.
-- English/Chinese labels and dark, light, and system theme modes.
+- English labels and dark, light, and system theme modes.
 - Local source controls, CSV import, and recorded Codex rate-limit use/remaining/reset windows.
+- A model selector that recalculates the summary and every chart for one model at a time.
+- A visible loading state for refreshes and a provider chart with direct percentages.
 
 See [metric definitions](docs/metrics.md) and [architecture](docs/architecture.md) for what each source can actually supply.
 
 ## Download for Windows
 
-Download [Tallybeam for Windows (installer)](https://github.com/notfeylo/tallybeam/releases/latest), run the `Tallybeam-Setup-...-win-x64.exe` file, and launch Tallybeam from the Start Menu or desktop shortcut. It targets Windows 10/11 x64 and includes Python and the dashboard; users do not need to install Python, Node.js, or Rust. The installer uses the current user's app folder and does not request administrator rights.
+Download [Modelmeter for Windows (installer)](https://github.com/notfeylo/modelmeter/releases/latest), run the `Modelmeter-Setup-...-win-x64.exe` file, and launch Modelmeter from the Start Menu or desktop shortcut. It targets Windows 10/11 x64 and includes Python and the dashboard; users do not need to install Python, Node.js, or Rust. The installer uses the current user's app folder and does not request administrator rights.
 
-The installer opens the dashboard in a Tauri window with its controls in the dashboard itself. The title strip matches the dashboard theme, and the right scrollbar is hidden while wheel, touch, and keyboard scrolling still work. Closing the window exits the app; running the shortcut again focuses the existing window. The browser-based interface is reserved for the command-line version below. If upgrading from 0.2.0, quit the old tray app first. For later updates, close the Tallybeam window before running Setup. If Setup lists Tallybeam under **Preparing to Install**, leave **Automatically close the applications** selected and click **Next**. Uninstall through Windows **Installed apps**. Usage imports and connection settings in `~/.tallybeam` remain after uninstall so upgrades do not erase them. The installer is currently unsigned, so Windows may show a SmartScreen warning; verify the download and SHA-256 hash on the release page before running it.
+The installer opens the dashboard in a Tauri window with its controls in the dashboard itself. The title strip matches the dashboard theme, and the right scrollbar is hidden while wheel, touch, and keyboard scrolling still work. Closing the window exits the app; running the shortcut again focuses the existing window. The browser-based interface is reserved for the command-line version below. If upgrading from 0.2.0, quit the old tray app first. For later updates, close the current window before running Setup. If Setup lists the app under **Preparing to Install**, leave **Automatically close the applications** selected and click **Next**. Uninstall through Windows **Installed apps**. Usage imports and connection settings in `~/.tallybeam` remain after uninstall so upgrades do not erase them. The installer is currently unsigned, so Windows may show a SmartScreen warning; verify the download and SHA-256 hash on the release page before running it.
 
 To build or verify the Windows installer yourself, see [Windows packaging](docs/windows-installer.md).
 
@@ -55,7 +57,7 @@ On macOS or Linux use the `tallybeam-indexer` binary without `.exe`.
 | OpenCode | Existing local SQLite databases in `~/.local/share/opencode` | Yes | Depends on the underlying provider; unavailable from local records |
 | Grok / xAI | CSV import | Yes, if supplied | Unavailable unless your own export contains it; not currently imported |
 
-Tallybeam does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable.
+Modelmeter does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable. The model picker filters locally recorded events; it cannot add usage from another device or provider website.
 
 To use a specific OpenCode channel database, set `OPENCODE_DB_PATH` before launching, for example `$env:OPENCODE_DB_PATH = 'C:\path\to\opencode-local.db'`. Otherwise all `opencode*.db` files under the local OpenCode data directory are scanned.
 
@@ -73,7 +75,7 @@ Grok,grok-4,2026-10-01T12:00:00Z,1000,300,0,0,project-a,request-1
 ## Privacy
 
 - The server binds to `127.0.0.1` only. There is no cloud account or telemetry.
-- The collector parses local session files and keeps only usage metadata in memory. Prompts and responses are never served to the browser or saved by Tallybeam.
+- The collector parses local session files and keeps only usage metadata in memory. Prompts and responses are never served to the browser or saved by Modelmeter.
 - OpenCode databases are opened read-only. The session detail shows usage counters and timing, never message content.
 - Local-source toggles are stored in `~/.tallybeam/config.json`.
 - `POST /api/import` accepts up to 5,000 rows and 2 MB per import. Browser requests from other origins are rejected.
@@ -108,8 +110,8 @@ The interface uses React, TypeScript, Tailwind, and Recharts. Built assets are c
 
 ## Known limits
 
-- Local CLI session history can be deleted or rotated by its owner; Tallybeam can only show retained records.
-- Token counts may differ from billing usage due to cache, tools, and provider accounting. Tallybeam uses the metadata stored by each tool.
+- Local CLI session history can be deleted or rotated by its owner; Modelmeter can only show retained records.
+- Token counts may differ from billing usage due to cache, tools, and provider accounting. Modelmeter uses the metadata stored by each tool.
 - The cache miss chart estimates gaps between consecutive requests in one session/model when prior cache usage is present. It is not a billing or provider reported number.
 - Runtime metrics are available only for sources with recorded start/end intervals, currently OpenCode. Other sources show zero rather than an invented duration.
 - Gemini and Grok web/app usage is not automatically available through these local session sources.

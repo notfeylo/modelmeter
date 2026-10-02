@@ -2,10 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { UsagePayload, MetricSummary } from "@/types";
 import { translate, type Locale } from "@/lib/i18n";
 
-function getLocale(): Locale {
-  const stored = localStorage.getItem("locale");
-  return stored === "zh" ? "zh" : "en";
-}
+function getLocale(): Locale { return "en"; }
 
 /**
  * Compute cache hit rate: cache_read / (input + cache_read + cache_write) * 100
@@ -33,7 +30,7 @@ function enrichPayload(payload: UsagePayload): UsagePayload {
   return payload;
 }
 
-export function useUsage(range: string) {
+export function useUsage(range: string, model: string) {
   const [data, setData] = useState<UsagePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +41,14 @@ export function useUsage(range: string) {
       const id = ++requestId.current;
       setLoading(true);
       setError(null);
-      if (!force) setData(null);
       try {
+        if (force) {
+          const scan = await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+          if (!scan.ok) throw new Error("Could not refresh local sources");
+        }
         const url = new URL("/api/usage", window.location.origin);
         url.searchParams.set("range", range);
+        if (model !== "all") url.searchParams.set("model", model);
         if (force) url.searchParams.set("_t", String(Date.now()));
 
         const res = await fetch(url);
@@ -61,7 +62,7 @@ export function useUsage(range: string) {
         if (id === requestId.current) setLoading(false);
       }
     },
-    [range],
+    [range, model],
   );
 
   useEffect(() => {

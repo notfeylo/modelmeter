@@ -67,6 +67,8 @@ export interface Meta {
   range: string;
   assistantMessageCount: number;
   scannedRows: number;
+  model: string;
+  availableModels: string[];
 }
 
 export interface UsagePayload {

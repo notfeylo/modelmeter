@@ -28,7 +28,7 @@ fn backend_path() -> Result<PathBuf, Box<dyn Error>> {
     if development.exists() {
         return Ok(development);
     }
-    Err("Tallybeam Python backend is missing; run scripts/build-windows.ps1".into())
+    Err("Modelmeter Python backend is missing; run scripts/build-windows.ps1".into())
 }
 
 fn free_port() -> Result<u16, Box<dyn Error>> {
@@ -111,7 +111,7 @@ fn main() {
 
             let url = format!("http://127.0.0.1:{port}/").parse()?;
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("Tallybeam")
+                .title("Modelmeter")
                 .decorations(false)
                 .background_color(tauri::window::Color(48, 48, 51, 255))
                 .on_navigation(move |destination| {
@@ -130,7 +130,7 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("failed to initialize Tallybeam")
+        .expect("failed to initialize Modelmeter")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 stop_backend(app);

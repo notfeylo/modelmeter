@@ -65,7 +65,7 @@ function newCell(): Cell {
 function computeHitRate(inp: number, cr: number, cw: number): number {
   const total = inp + cr + cw;
   if (total === 0) return 0;
-  return Math.round(((cr + cw) / total) * 1000) / 10;
+  return Math.round((cr / total) * 1000) / 10;
 }
 
 function blockDisplayValue(cell: Cell, metric: MetricKey): number {

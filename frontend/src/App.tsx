@@ -25,16 +25,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCwIcon, MoonIcon, SunIcon, MonitorIcon } from "lucide-react";
+import { LoadingBreadcrumb } from "@/components/ui/animated-loading-svg-text-shimmer";
 import { useTheme } from "@/components/theme-provider";
 import { useLocale } from "@/lib/i18n";
 
 export function App() {
   const [range, setRange] = useState("30");
   const [metric, setMetric] = useState<MetricKey>("total");
+  const [model, setModel] = useState("all");
   const [missExplorer, setMissExplorer] = useState<{ open: boolean; date: string | null }>({ open: false, date: null });
-  const { data, loading, error, refresh } = useUsage(range);
+  const { data, loading, error, refresh } = useUsage(range, model);
   const { theme, setTheme } = useTheme();
-  const { locale, setLocale, t } = useLocale();
+  const { t } = useLocale();
 
   if (error && !data) {
     return (
@@ -93,6 +95,15 @@ export function App() {
           {/* Metric selector + Refresh + Theme — wraps on mobile */}
           <div className="flex flex-wrap items-center gap-2">
             <ConnectionsDialog onChanged={refresh} />
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="h-8 min-w-[175px] max-w-[270px] rounded-lg text-sm" aria-label="Filter by model">
+                <SelectValue placeholder="All models" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All models</SelectItem>
+                {(data?.meta.availableModels || []).map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select value={metric} onValueChange={(v) => setMetric(v as MetricKey)}>
               <SelectTrigger className="h-8 w-[170px] rounded-lg text-sm">
                 <SelectValue />
@@ -131,16 +142,10 @@ export function App() {
               {theme === "dark" ? <SunIcon className="size-3.5" /> : theme === "light" ? <MonitorIcon className="size-3.5" /> : <MoonIcon className="size-3.5" />}
             </Button>
 
-            <Button
-              onClick={() => setLocale(locale === "zh" ? "en" : "zh")}
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg px-2"
-            >
-              <span className="text-xs font-mono">{locale === "zh" ? "EN" : "中"}</span>
-            </Button>
           </div>
         </div>
+        {loading && <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2" role="status" aria-live="polite"><LoadingBreadcrumb text={data ? "Refreshing usage" : "Reading local usage"} /><span className="text-xs text-muted-foreground">{model === "all" ? "All models" : model}</span></div>}
+        {error && data && <p className="mt-2 text-xs text-destructive" role="alert">Refresh failed: {error}. Showing the last loaded snapshot.</p>}
 
         {/* Subtle separator between controls and content */}
         <div className="mt-4 mb-1 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
@@ -214,6 +219,7 @@ export function App() {
         open={missExplorer.open}
         onOpenChange={(o) => setMissExplorer((prev) => ({ ...prev, open: o }))}
         range={range}
+        model={model}
         date={missExplorer.date}
       />
     </div>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Modelmeter orbit logo">
+  <defs><linearGradient id="a" x1="0" x2="1" y1="1" y2="0"><stop stop-color="#85a8ff"/><stop offset="1" stop-color="#61e5c4"/></linearGradient></defs>
+  <rect width="256" height="256" rx="62" fill="#303236"/>
+  <circle cx="128" cy="128" r="73" fill="none" stroke="#555a64" stroke-width="15"/>
+  <path d="M55 128a73 73 0 0 1 126-50" fill="none" stroke="url(#a)" stroke-linecap="round" stroke-width="15"/>
+  <path d="M78 163V97l25 36 25-36v66" fill="none" stroke="#f5f6f8" stroke-linecap="round" stroke-linejoin="round" stroke-width="12"/>
+  <path d="M148 165V98h30" fill="none" stroke="#f5f6f8" stroke-linecap="round" stroke-linejoin="round" stroke-width="12"/>
+  <circle cx="181" cy="78" r="10" fill="#61e5c4"/>
+</svg>

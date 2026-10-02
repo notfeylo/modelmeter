@@ -36,12 +36,13 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   range: string;
+  model: string;
   date: string | null;
 }
 
-export function CacheMissExplorer({ open, onOpenChange, range, date }: Props) {
+export function CacheMissExplorer({ open, onOpenChange, range, model, date }: Props) {
   const { t } = useLocale();
-  const { data, loading } = useCacheMissSessions({ range, date: date ?? undefined }, open);
+  const { data, loading } = useCacheMissSessions({ range, model, date: date ?? undefined }, open);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {

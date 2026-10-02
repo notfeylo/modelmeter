@@ -3,15 +3,14 @@ import type { CacheMissSessionsPayload, CacheMissSessionDetail } from "@/types";
 import { translate, type Locale } from "@/lib/i18n";
 
 function getLocale(): Locale {
-  const stored = localStorage.getItem("locale");
-  return stored === "zh" ? "zh" : "en";
+  return "en";
 }
 
 export function useCacheMissSessions(
-  params: { range: string; date?: string },
+  params: { range: string; model: string; date?: string },
   open: boolean,
 ) {
-  const { range, date } = params;
+  const { range, model, date } = params;
   const [data, setData] = useState<CacheMissSessionsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +21,7 @@ export function useCacheMissSessions(
     try {
       const url = new URL("/api/cache-miss/sessions", window.location.origin);
       url.searchParams.set("range", range);
+      if (model !== "all") url.searchParams.set("model", model);
       if (date) url.searchParams.set("date", date);
       const res = await fetch(url);
       const json = await res.json();
@@ -32,7 +32,7 @@ export function useCacheMissSessions(
     } finally {
       setLoading(false);
     }
-  }, [range, date]);
+  }, [range, model, date]);
 
   useEffect(() => {
     if (open) fetchData();

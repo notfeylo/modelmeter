@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Modelmeter mosaic logo">
+  <rect width="256" height="256" rx="62" fill="#303236"/>
+  <rect x="51" y="51" width="66" height="66" rx="19" fill="#89a9ff"/>
+  <rect x="139" y="51" width="66" height="66" rx="19" fill="#a991fb"/>
+  <rect x="51" y="139" width="66" height="66" rx="19" fill="#63dfc1"/>
+  <path d="M151 190v-39l21 26 21-26v39" fill="none" stroke="#f5f6f8" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

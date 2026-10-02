@@ -1,19 +1,16 @@
 import {
   createContext,
   useContext,
-  useState,
-  useCallback,
   useMemo,
   type ReactNode,
 } from "react";
 import type { Locale } from "./types";
-import { zh } from "./locales/zh";
 import { en } from "./locales/en";
 import type { Translations } from "./types";
 
 type NestedValue = string | { [key: string]: NestedValue };
 
-const messages: Record<Locale, Translations> = { zh, en };
+const messages: Record<Locale, Translations> = { en } as Record<Locale, Translations>;
 
 function getNestedValue(obj: Translations, path: string): string | undefined {
   return path.split(".").reduce((acc: NestedValue | undefined, key) => {
@@ -42,44 +39,20 @@ export function translate(
   params?: Record<string, string | number>,
 ): string {
   const msg =
-    getNestedValue(messages[locale], key) ??
-    getNestedValue(messages.zh, key) ??
+    getNestedValue(messages[locale] || en, key) ??
     key;
   return interpolate(msg, params);
 }
 
 interface LocaleContextValue {
   locale: Locale;
-  setLocale: (locale: Locale) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-const STORAGE_KEY = "locale";
-
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window === "undefined") return "en";
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === "en" || stored === "zh" ? stored : "en";
-  });
-
-  const setLocale = useCallback((next: Locale) => {
-    localStorage.setItem(STORAGE_KEY, next);
-    setLocaleState(next);
-  }, []);
-
-  const t = useCallback(
-    (key: string, params?: Record<string, string | number>) =>
-      translate(locale, key, params),
-    [locale],
-  );
-
-  const value = useMemo(
-    () => ({ locale, setLocale, t }),
-    [locale, setLocale, t],
-  );
+  const value = useMemo(() => ({ locale: "en" as Locale, t: (key: string, params?: Record<string, string | number>) => translate("en", key, params) }), []);
 
   return (
     <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>

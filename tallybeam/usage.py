@@ -76,10 +76,14 @@ def _range_days(events, range_value):
     return [(first + timedelta(days=i)).isoformat() for i in range((today - first).days + 1)]
 
 
-def usage_payload(all_events, range_value="30"):
+def usage_payload(all_events, range_value="30", model="all"):
     if range_value not in ("7", "30", "90", "180", "365", "all"):
         range_value = "30"
-    events = selected(all_events, range_value)
+    available_models = sorted({str(e["model"]) for e in all_events})
+    if model != "all" and model not in available_models:
+        model = "all"
+    scoped_events = all_events if model == "all" else [e for e in all_events if e["model"] == model]
+    events = selected(scoped_events, range_value)
     day_names = _range_days(events, range_value)
     hourly_trend = range_value == "7"
     day_buckets = ([f"{name}T{hour:02d}" for name in day_names for hour in range(24)]
@@ -138,14 +142,15 @@ def usage_payload(all_events, range_value="30"):
         return {"name": key, **value}
     def pm_named(key, value):
         return {"provider": key[0], "model": key[1], **value}
-    local_days = [datetime.fromisoformat(e["timestamp"]).astimezone().date().isoformat() for e in all_events]
+    local_days = [datetime.fromisoformat(e["timestamp"]).astimezone().date().isoformat() for e in scoped_events]
     now = datetime.now().astimezone()
     return {
         "meta": {"database": "local sources", "databasePath": "", "generatedAt": now.isoformat(),
                  "timezone": now.tzname() or "local", "firstDay": day_names[0], "lastDay": day_names[-1],
                  "availableFirstDay": min(local_days) if local_days else None,
                  "availableLastDay": max(local_days) if local_days else None, "range": range_value,
-                 "assistantMessageCount": len(events), "scannedRows": len(all_events)},
+                 "assistantMessageCount": len(events), "scannedRows": len(scoped_events),
+                 "model": model, "availableModels": available_models},
         "summary": summary,
         "days": [{"date": day, **days[day]} for day in day_buckets],
         "models": [named(k, v) for k, v in sorted(models.items(), key=lambda x: x[1]["total"], reverse=True)],

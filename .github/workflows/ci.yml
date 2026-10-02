@@ -43,6 +43,6 @@ jobs:
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: Tallybeam-Windows-Installer
-          path: dist/Tallybeam-Setup-0.4.1-win-x64.exe
+          name: Modelmeter-Windows-Installer
+          path: dist/Modelmeter-Setup-0.5.0-win-x64.exe
           if-no-files-found: error
