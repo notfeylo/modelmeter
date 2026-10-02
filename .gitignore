@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 target/
+src-tauri/gen/
 .venv/
 .env
 .pytest_cache/

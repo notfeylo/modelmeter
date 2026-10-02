@@ -1,4 +1,4 @@
-"""Render the existing Tallybeam mark as Windows and tray icons."""
+"""Render the Tallybeam mark as a Windows application icon."""
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -17,4 +17,3 @@ draw.line(((12 * scale, 49 * scale), (51 * scale, 11 * scale)), fill="#F2B36F", 
 icon = image.resize((256, 256), Image.Resampling.LANCZOS)
 (ROOT / "assets").mkdir(exist_ok=True)
 icon.save(ROOT / "assets" / "tallybeam.ico", format="ICO", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-icon.save(ROOT / "tallybeam" / "static" / "tray.png")

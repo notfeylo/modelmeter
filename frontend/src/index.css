@@ -3,6 +3,36 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/space-grotesk";
 
+/* Hide the scrollbar chrome without disabling wheel, touch, or keyboard scrolling. */
+html, body, #root {
+    scrollbar-width: none;
+}
+html::-webkit-scrollbar, body::-webkit-scrollbar, #root::-webkit-scrollbar {
+    display: none;
+}
+
+.desktop-titlebar {
+    -webkit-app-region: drag;
+}
+.desktop-window-button {
+    -webkit-app-region: no-drag;
+    display: inline-flex;
+    height: 100%;
+    width: 44px;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted-foreground);
+    transition: background-color 150ms ease, color 150ms ease;
+}
+.desktop-window-button:hover {
+    background: var(--accent);
+    color: var(--foreground);
+}
+.desktop-window-close:hover {
+    background: oklch(0.55 0.22 25);
+    color: white;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

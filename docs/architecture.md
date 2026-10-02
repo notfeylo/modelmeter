@@ -2,7 +2,7 @@
 
 Tallybeam runs entirely on the local machine. The Python standard-library HTTP server binds to `127.0.0.1` and serves the prebuilt React dashboard and JSON API. The React, TypeScript, Tailwind and Recharts source is under `frontend/`; `npm run build` writes static assets into `tallybeam/static/`. Python can run those committed assets without Node installed. The optional Rust program in `rust-indexer/` only accelerates local file discovery.
 
-The Windows installer bundles a separate desktop entry point with Qt WebEngine. It starts the same loopback server and renders the UI in a native Tallybeam window. Closing the window stops that server. The source command `python -m tallybeam.app` continues to open the dashboard in a browser.
+The Windows installer bundles a Tauri 2 desktop shell and a frozen Python API process. Tauri starts the Python process on a free loopback port, waits for its health endpoint, and opens that local dashboard in the system WebView2 runtime. Its window has no system title bar; the dashboard supplies the translucent title strip and controls. Closing the window stops the Python process. The source command `python -m tallybeam.app` continues to open the dashboard in a browser.
 
 Local collectors read Claude Code, Codex CLI, Gemini CLI and OpenCode usage metadata. OpenCode SQLite files are opened read-only. V1 `message` and V2 `session_message` data are selected by the table with more rows, so migration residue in the other table is not counted twice. Session metadata resolves from both `session` and `session_v2`; child sessions contribute tokens but not runtime. An explicit `OPENCODE_DB_PATH` limits OpenCode collection to one database. CSV imports are saved to `~/.tallybeam/tallybeam.sqlite3`. No prompts, responses, API keys or cookies are stored or returned by the API.
 
@@ -17,6 +17,8 @@ tallybeam/
 ├── frontend/src/lib/i18n/       English and Chinese labels
 ├── tallybeam/                   Python collectors, aggregation and server
 ├── tallybeam/static/            committed production UI bundle
+├── src-tauri/                   Windows desktop shell and window lifecycle
+├── backend_entry.py             frozen Python API entry point
 ├── rust-indexer/                optional Rust file discovery
 ├── tests/                       collector and aggregation tests
 └── docs/                        architecture and metric definitions

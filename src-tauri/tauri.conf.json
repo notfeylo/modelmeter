@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tallybeam",
+  "version": "0.4.0",
+  "identifier": "com.notfeylo.tallybeam",
+  "build": {
+    "frontendDist": "../tallybeam/static"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["../assets/tallybeam.ico"]
+  }
+}

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.0",
+    [string]$Version = "0.4.0",
     [string]$Iscc = "",
     [string]$Python = "python"
 )
@@ -18,14 +18,19 @@ try {
     & $Python scripts/make_icon.py
     if ($LASTEXITCODE -ne 0) { throw "Icon generation failed" }
 
-    & $Python -m PyInstaller --noconfirm --clean --windowed --onedir --name Tallybeam --specpath build --icon "$root\assets\tallybeam.ico" --add-data "$root\tallybeam\static;tallybeam/static" "$root\desktop_entry.py"
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+    & $Python -m PyInstaller --noconfirm --clean --windowed --onedir --name TallybeamBackend --specpath build --add-data "$root\tallybeam\static;tallybeam/static" "$root\backend_entry.py"
+    if ($LASTEXITCODE -ne 0) { throw "Python backend build failed" }
 
-    # PyInstaller can resolve Windows' icuuc.dll to an unrelated ICU build on PATH
-    # (for example Poppler). QtCore expects the Windows system ICU exports.
-    foreach ($name in @("icuuc.dll", "icudt78.dll")) {
-        $bundledIcu = Join-Path $root "dist\Tallybeam\_internal\$name"
-        if (Test-Path -LiteralPath $bundledIcu) { Remove-Item -LiteralPath $bundledIcu }
+    cargo build --release --manifest-path src-tauri/Cargo.toml
+    if ($LASTEXITCODE -ne 0) { throw "Tauri desktop build failed" }
+
+    $webViewBootstrapper = Join-Path $root "build\MicrosoftEdgeWebView2Setup.exe"
+    if (-not (Test-Path -LiteralPath $webViewBootstrapper)) {
+        Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webViewBootstrapper
+    }
+    $signature = Get-AuthenticodeSignature -FilePath $webViewBootstrapper
+    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+        throw "The WebView2 bootstrapper must have a valid Microsoft signature."
     }
 
     if (-not $Iscc) {

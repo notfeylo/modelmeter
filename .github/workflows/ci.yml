@@ -36,12 +36,13 @@ jobs:
         with:
           node-version: '22'
       - run: python -m unittest discover -s tests -v
-      - run: python -m pip install pyinstaller==6.22.3 Pillow==12.3.0 PySide6==6.11.2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install pyinstaller==6.22.3 Pillow==12.3.0
       - run: choco install innosetup --yes --no-progress
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: Tallybeam-Windows-Installer
-          path: dist/Tallybeam-Setup-0.3.0-win-x64.exe
+          path: dist/Tallybeam-Setup-0.4.0-win-x64.exe
           if-no-files-found: error

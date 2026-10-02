@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 
 [Setup]
@@ -33,8 +33,13 @@ RestartApplications=no
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
-Source: "..\dist\Tallybeam\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\src-tauri\target\release\Tallybeam.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\TallybeamBackend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -43,4 +48,19 @@ Name: "{autoprograms}\Tallybeam"; Filename: "{app}\Tallybeam.exe"; WorkingDir: "
 Name: "{autodesktop}\Tallybeam"; Filename: "{app}\Tallybeam.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft WebView2 Runtime..."; Check: WebView2Missing
 Filename: "{app}\Tallybeam.exe"; Description: "Launch Tallybeam"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function WebView2Missing(): Boolean;
+var
+  Version: String;
+  Key: String;
+begin
+  Key := 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  Result := True;
+  if RegQueryStringValue(HKCU, Key, 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0') then
+    Result := False;
+  if RegQueryStringValue(HKLM, 'Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0') then
+    Result := False;
+end;
