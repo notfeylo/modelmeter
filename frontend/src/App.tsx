@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useUsage } from "@/hooks/use-usage";
 import { RANGE_OPTIONS, METRIC_OPTIONS } from "@/types";
 import type { MetricKey } from "@/types";
@@ -10,6 +10,7 @@ import { ModelChart } from "@/components/model-chart";
 import { ProviderChart } from "@/components/provider-chart";
 import { CacheHitRateChart } from "@/components/cache-hit-rate-chart";
 import { CacheMissExplorer } from "@/components/cache-miss-explorer";
+import { UsageIntelligence } from "@/components/usage-intelligence";
 import { ConnectionsDialog } from "@/components/connections-dialog";
 import { HeatmapChart, EMPTY_HEATMAP } from "@/components/heatmap-chart";
 import { Button } from "@/components/ui/button";
@@ -29,17 +30,24 @@ import { LoadingBreadcrumb } from "@/components/ui/animated-loading-svg-text-shi
 import { useTheme } from "@/components/theme-provider";
 import { useLocale } from "@/lib/i18n";
 
-const PROVIDER_OPTIONS = ["OpenAI", "Anthropic", "Google", "Antigravity", "xAI", "OpenCode"];
+const PROVIDER_OPTIONS = ["OpenAI", "Anthropic", "Google", "Antigravity", "Kimi", "xAI", "OpenCode"];
+type LocalInventory = { models: { provider: string; model: string; state: string; evidence: string }[]; vaults: { name: string; path: string; status: string }[]; note: string };
 
 export function App() {
   const [range, setRange] = useState("30");
   const [metric, setMetric] = useState<MetricKey>("total");
   const [provider, setProvider] = useState("all");
   const [model, setModel] = useState("all");
+  const [inventory, setInventory] = useState<LocalInventory>({ models: [], vaults: [], note: "" });
   const [missExplorer, setMissExplorer] = useState<{ open: boolean; date: string | null }>({ open: false, date: null });
   const { data, loading, error, refresh } = useUsage(range, provider, model);
   const { theme, setTheme } = useTheme();
   const { t } = useLocale();
+  const refreshInventory = () => fetch("/api/inventory?refresh=1").then(response => response.json()).then(setInventory).catch(() => {});
+  useEffect(() => { fetch("/api/inventory").then(response => response.json()).then(setInventory).catch(() => {}); }, []);
+  const installedProviders = inventory.models.map(item => item.provider);
+  const installedModels = inventory.models.filter(item => provider === "all" || item.provider === provider).map(item => item.model);
+  const modelOptions = [...new Set([...(data?.meta.availableModels || []), ...installedModels])].sort();
 
   if (error && !data) {
     return (
@@ -97,14 +105,14 @@ export function App() {
 
           {/* Metric selector + Refresh + Theme — wraps on mobile */}
           <div className="flex flex-wrap items-center gap-2">
-            <ConnectionsDialog onChanged={refresh} />
+            <ConnectionsDialog onChanged={refresh} inventory={inventory} onInventoryChanged={refreshInventory} />
             <Select value={provider} onValueChange={(value) => { setProvider(value); setModel("all"); }}>
               <SelectTrigger className="h-8 min-w-[150px] rounded-lg text-sm" aria-label="Filter by provider">
                 <SelectValue placeholder="All providers" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All providers</SelectItem>
-                {[...new Set([...PROVIDER_OPTIONS, ...(data?.meta.availableProviders || [])])].map((name) =>
+                {[...new Set([...PROVIDER_OPTIONS, ...(data?.meta.availableProviders || []), ...installedProviders])].map((name) =>
                   <SelectItem key={name} value={name}>{name}</SelectItem>
                 )}
               </SelectContent>
@@ -115,7 +123,7 @@ export function App() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All models</SelectItem>
-                {(data?.meta.availableModels || []).map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                {modelOptions.map((name) => <SelectItem key={name} value={name}>{name}{installedModels.includes(name) && !(data?.meta.availableModels || []).includes(name) ? " · installed" : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={metric} onValueChange={(v) => setMetric(v as MetricKey)}>
@@ -213,6 +221,8 @@ export function App() {
             />
           </div>
         </div>
+
+        {data && <UsageIntelligence refreshKey={data.meta.generatedAt} ollamaModels={inventory.models.filter(item => item.provider === "Ollama").map(item => item.model)} />}
 
         {/* Footer */}
         {data && (

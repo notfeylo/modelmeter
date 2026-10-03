@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.6.0"
+  #define AppVersion "0.7.0"
 #endif
 
 [Setup]
@@ -42,6 +42,7 @@ Type: files; Name: "{autodesktop}\Tallybeam.lnk"
 [Files]
 Source: "..\src-tauri\target\release\Modelmeter.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\TallybeamBackend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\ModelmeterStatusline\*"; DestDir: "{app}\statusline"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build\MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion

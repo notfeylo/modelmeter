@@ -13,12 +13,13 @@ interface HeroSectionProps {
   payload: UsagePayload;
   metric: MetricKey;
 }
+type LimitStatus = { provider: string; model: string; recorded_at?: string; used_percent: number | null; resets_at: number | null; status: string };
 
 export function HeroSection({ payload, metric }: HeroSectionProps) {
   const { locale, t } = useLocale();
-  const [limit, setLimit] = useState<{ used_percent?: number; resets_at?: number; recorded_at?: string } | null>(null);
+  const [limits, setLimits] = useState<LimitStatus[]>([]);
   useEffect(() => {
-    fetch("/api/limits").then(r => r.json()).then(d => setLimit(d.codex?.primary ? { ...d.codex.primary, recorded_at: d.codex.recorded_at } : null)).catch(() => {});
+    fetch("/api/limits").then(r => r.json()).then(d => setLimits(d.providers || [])).catch(() => {});
   }, [payload.meta.generatedAt]);
   const { meta } = payload;
   const metricLabel = t(`metric.${metric}`);
@@ -41,11 +42,17 @@ export function HeroSection({ payload, metric }: HeroSectionProps) {
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
             {t("hero.description")}
           </p>
-          {payload.meta.hasCodexUsage && limit && typeof limit.used_percent === "number" && (!limit.resets_at || limit.resets_at * 1000 > new Date(payload.meta.generatedAt).getTime()) && <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={limit.recorded_at ? `Last recorded ${new Date(limit.recorded_at).toLocaleString()}` : undefined}>
-            <span className="size-1.5 rounded-full bg-primary" />
-            <span>Recorded Codex 5h limit: <strong>{Math.max(0, 100 - limit.used_percent).toFixed(0)}% remaining</strong></span>
-            {limit.resets_at && <span className="text-muted-foreground">· resets {new Date(limit.resets_at * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
-          </div>}
+          <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Recorded provider limits">
+            {limits.filter(item => meta.provider === "all" || item.provider === meta.provider).map(item => {
+              const current = typeof item.used_percent === "number" && (!item.resets_at || item.resets_at * 1000 > new Date(meta.generatedAt).getTime());
+              return <div key={item.provider} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] text-foreground" title={`${item.status}${item.recorded_at ? ` · last recorded ${new Date(item.recorded_at).toLocaleString()}` : ""}`}>
+                <span className={`size-1.5 shrink-0 rounded-full ${current ? "bg-primary" : "bg-muted-foreground"}`} />
+                <span className="truncate">{item.provider} · {item.model}</span>
+                <strong className="shrink-0">{current ? `${Math.max(0, 100 - item.used_percent!).toFixed(0)}% left` : "limit unavailable"}</strong>
+                {current && item.resets_at && <span className="shrink-0 text-muted-foreground">· resets {new Date(item.resets_at * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
+              </div>;
+            })}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2 animate-slide-up stagger-2">

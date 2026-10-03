@@ -4,6 +4,8 @@ The dashboard layout, chart components, styling patterns, and cache lifecycle pr
 
 Space Grotesk is distributed through `@fontsource-variable/space-grotesk`; other frontend dependencies and licenses are recorded in `frontend/package-lock.json`.
 
+`frontend/src/shadcn-variants.css` contains the small Tailwind variant stylesheet from the MIT-licensed `shadcn` package (copyright its contributors). The CLI package is not needed to run or build Modelmeter.
+
 The Windows application bundles Python, the PyInstaller bootloader, and a Tauri desktop shell that uses the installed Microsoft WebView2 runtime. Pillow is used to generate the icon at build time. Their licenses and source are available from [Python](https://www.python.org/downloads/), [PyInstaller](https://github.com/pyinstaller/pyinstaller), [Tauri](https://github.com/tauri-apps/tauri), [WebView2](https://learn.microsoft.com/microsoft-edge/webview2/), and [Pillow](https://github.com/python-pillow/Pillow). The build script and Tallybeam source needed to rebuild the installer are included in this repository.
 
 ## MIT license for adapted upstream code

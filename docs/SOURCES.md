@@ -3,8 +3,13 @@
 Modelmeter's provider claims are intentionally narrow.
 
 - [Gemini CLI session management](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/session-management.md) documents saved sessions with token usage in `~/.gemini/tmp/<project_hash>/chats/`.
+- [Ollama local model API](https://github.com/ollama/ollama/blob/main/docs/api.md) documents `/api/tags` for locally available models.
+- [LM Studio local model API](https://lmstudio.ai/docs/developer/rest/endpoints) documents `/api/v0/models` for downloaded and loaded models.
+- [Hugging Face local cache](https://huggingface.co/docs/hub/en/local-cache) documents the model cache layout and `HF_HUB_CACHE`/`HF_HOME` overrides.
+- [Obsidian vault help](https://obsidian.md/help/vault) documents that vaults are local folders, not provider token logs.
 - [Gemini CLI configuration](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md) documents `GEMINI_CLI_HOME` as the user storage root.
 - [Claude Code environment variables](https://code.claude.com/docs/en/env-vars) documents `CLAUDE_CONFIG_DIR` as the configuration and session-history root.
+- [Claude Code status line](https://code.claude.com/docs/en/statusline) documents the optional `rate_limits` windows provided to a configured local command after a response.
 - [Codex source](https://github.com/openai/codex/blob/main/codex-rs/core/src/session_rollout_init_error.rs) identifies the `sessions` subfolder of Codex home. Modelmeter also checks `CODEX_HOME/sessions` when that variable is set.
 - [Codex rollout source](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/lib.rs) identifies both `sessions` and `archived_sessions` subfolders. Modelmeter reads both and deduplicates matching usage records.
 - [Antigravity agent settings](https://antigravity.google/docs/agent-settings) describes a local app data area for artifacts and knowledge items, not a documented token-counter log. Modelmeter does not infer token counts from those files.
@@ -14,4 +19,4 @@ Modelmeter's provider claims are intentionally narrow.
 - [OpenAI organization usage API](https://platform.openai.com/docs/api-reference/usage/completions) concerns API organization usage, which is separate from a Codex subscription. Modelmeter currently reads Codex CLI session telemetry instead.
 - [Anthropic usage report](https://docs.anthropic.com/en/api/admin-api/usage-cost/get-messages-usage-report) concerns organization API usage and requires an Admin API key. Modelmeter currently reads Claude Code session telemetry instead.
 
-The visual references in the brief informed the activity map, token breakdown, trend, and session detail structure. No code or assets were copied from the reference repositories.
+The dashboard layout and chart presentation were adapted from `heimoshuiyu/opencode-token-dashboard` under its MIT license. See [third-party notices](../THIRD_PARTY_NOTICES.md). The other reference repositories informed source research; their code and assets were not copied.

@@ -13,7 +13,7 @@ try {
             $port = $Matches[1]
             $result = Invoke-RestMethod "http://127.0.0.1:$port/api/health" -TimeoutSec 1
             $app.Refresh()
-            if ($result.ok -eq $true -and $result.version -eq "0.6.0" -and $app.MainWindowTitle -eq "Modelmeter") {
+            if ($result.ok -eq $true -and $result.version -eq "0.7.0" -and $app.MainWindowTitle -eq "Modelmeter") {
                 $healthy = $true
                 break
             }

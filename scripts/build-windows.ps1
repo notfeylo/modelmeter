@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.6.0",
+    [string]$Version = "0.7.0",
     [string]$Iscc = "",
     [string]$Python = "python"
 )
@@ -20,6 +20,8 @@ try {
 
     & $Python -m PyInstaller --noconfirm --clean --windowed --onedir --name TallybeamBackend --specpath build --add-data "$root\tallybeam\static;tallybeam/static" "$root\backend_entry.py"
     if ($LASTEXITCODE -ne 0) { throw "Python backend build failed" }
+    & $Python -m PyInstaller --noconfirm --clean --console --onedir --name ModelmeterStatusline --specpath build "$root\statusline_entry.py"
+    if ($LASTEXITCODE -ne 0) { throw "Claude status-line companion build failed" }
 
     cargo build --release --manifest-path src-tauri/Cargo.toml
     if ($LASTEXITCODE -ne 0) { throw "Tauri desktop build failed" }

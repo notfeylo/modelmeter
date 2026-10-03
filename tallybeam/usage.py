@@ -23,7 +23,9 @@ def provider_name(event):
                "codex": "OpenAI", "openai": "OpenAI",
                "gemini": "Google", "google": "Google",
                "grok": "xAI", "xai": "xAI",
-               "antigravity": "Antigravity", "google-antigravity": "Antigravity"}
+               "antigravity": "Antigravity", "google-antigravity": "Antigravity",
+               "moonshot": "Kimi", "kimi": "Kimi",
+               "ollama": "Ollama", "lm studio": "LM Studio", "hugging face": "Hugging Face"}
     return aliases.get(raw.casefold(), raw)
 
 

@@ -1,6 +1,6 @@
 # Modelmeter
 
-A desktop-local dashboard for token usage across AI coding tools. It reads usage metadata from Claude Code, Codex CLI, Gemini CLI, and OpenCode sessions, and accepts CSV usage exports for Grok/xAI or other providers. The interface starts in a dark grey theme and uses Space Grotesk. The Python package and data directory retain the `tallybeam` identifier for upgrade compatibility.
+A desktop-local dashboard for token usage across AI coding tools. It reads usage metadata from Claude Code, Codex CLI, Gemini CLI, and OpenCode sessions, and accepts CSV usage exports for Grok/xAI or other providers. The interface starts with a black background and uses Space Grotesk. The Python package and data directory retain the `tallybeam` identifier for upgrade compatibility.
 
 ## Features
 
@@ -12,8 +12,11 @@ A desktop-local dashboard for token usage across AI coding tools. It reads usage
 - Local source controls, additional session folders, CSV import, and recorded Codex rate-limit use/remaining/reset windows.
 - Provider and model selectors that recalculate the summary and every chart for one source owner or model at a time.
 - A visible loading state for refreshes and a provider chart with direct percentages.
+- Discovered Ollama, LM Studio, and Hugging Face models shown only when present locally, plus Obsidian vault and observed agent-session links.
+- A Daily/2-hour heatmap switch with horizontal drag scrolling and hidden scrollbars.
+- Provider limit status, recorded-usage questions with evidence, optional local Ollama explanations, and a validated advisory neural forecast.
 
-See [metric definitions](docs/metrics.md) and [architecture](docs/architecture.md) for what each source can actually supply.
+See [metric definitions](docs/metrics.md), [local intelligence](docs/intelligence.md), and [architecture](docs/architecture.md) for what each source can actually supply.
 
 ## Screenshots
 
@@ -61,20 +64,37 @@ On macOS or Linux use the `tallybeam-indexer` binary without `.exe`.
 
 | Source | Connection | Token usage | Remaining/reset |
 | --- | --- | --- | --- |
-| Claude Code | Existing local sessions in `~/.claude/projects` or `CLAUDE_CONFIG_DIR/projects` | Yes | Subscription quota unavailable from local records |
+| Claude Code | Existing local sessions in `~/.claude/projects` or `CLAUDE_CONFIG_DIR/projects` | Yes | 5-hour and weekly windows if optional status-line bridge is configured |
 | Codex CLI | Existing local sessions and archived sessions in `~/.codex` or `CODEX_HOME` | Yes | Rate-limit percent and reset when recorded by Codex |
 | Gemini CLI | Existing local sessions in `~/.gemini/tmp` or `GEMINI_CLI_HOME/.gemini/tmp` | Yes | Account quota unavailable from local records |
 | OpenCode | Existing local SQLite databases in `~/.local/share/opencode` | Yes | Depends on the underlying provider; unavailable from local records |
 | Grok / xAI | CSV import | Yes, if supplied | Unavailable unless your own export contains it; not currently imported |
 | Antigravity | CSV import | Yes, if supplied | No verified local token-counter source is currently supported |
+| Kimi | CSV import | Yes, if supplied | Limit unavailable without a supported recorded source |
+| Ollama / LM Studio / Hugging Face | Installed model discovery; CSV usage import | Discovery alone supplies no usage | No cloud subscription limit inferred |
 
-Modelmeter does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable. The provider and model pickers filter locally recorded events; they cannot add usage from another device or provider website. A provider without records displays zero. In **Connections**, add an existing session folder if a supported tool stores its logs elsewhere. Modelmeter checks those folders and supported environment overrides without crawling unrelated files across the computer. Files an agent created in a project do not reveal exact token counts.
+Modelmeter does **not** ask for account passwords, scrape browser cookies, or claim that an API key can reveal a personal subscription balance. API billing, coding-tool subscription limits, and token counts are different measures. Missing provider data is shown as unavailable. The provider and model pickers filter locally recorded events; a discovered but unused model shows zero. In **Connections**, add an existing session folder if a supported tool stores its logs elsewhere. Modelmeter checks those folders and supported environment overrides without crawling unrelated files across the computer. Chat-only use is counted when a supported tool records token counters. Files an agent created in a project or Obsidian vault do not reveal exact token counts.
 
 To use a specific OpenCode channel database, set `OPENCODE_DB_PATH` before launching, for example `$env:OPENCODE_DB_PATH = 'C:\path\to\opencode-local.db'`. Otherwise all `opencode*.db` files under the local OpenCode data directory are scanned.
 
+### Optional Claude Code limit connection
+
+Claude Code can pass its recorded rate-limit windows to a status-line command. In **Connections**, copy Modelmeter's companion command and set it as `statusLine.command` in Claude Code's settings, for example:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:\\path\\to\\ModelmeterStatusline.exe"
+  }
+}
+```
+
+Use the actual path shown in Connections. The companion writes only the reported model ID, 5-hour/weekly percentages, reset timestamps, and observation time to `~/.tallybeam/claude-limits.json`. It does not save Claude's full status-line input or conversation. If you already use a custom status line, preserve it and integrate the capture command manually. A missing window stays unavailable; snapshots older than ten minutes are not shown as current.
+
 ## CSV import
 
-Choose a CSV in **Connections**. Required headers: `provider,model,timestamp,input,output`. Optional headers: `cache_read,cache_write,session,id`. Use ISO 8601 timestamps and provider names `OpenAI`, `Anthropic`, `Google`, `Antigravity`, `xAI`, `Claude`, `Codex`, `Gemini`, `Grok`, `OpenCode`, or `Other`. Reimporting rows with the same `id` replaces them. The browser sends the parsed data only to the local server. Imported usage is saved in `~/.tallybeam/tallybeam.sqlite3`.
+Choose a CSV in **Connections**. Required headers: `provider,model,timestamp,input,output`. Optional headers: `cache_read,cache_write,session,id`. Use ISO 8601 timestamps and provider names `OpenAI`, `Anthropic`, `Google`, `Antigravity`, `Kimi`, `xAI`, `Ollama`, `LM Studio`, `Hugging Face`, `Claude`, `Codex`, `Gemini`, `Grok`, `OpenCode`, or `Other`. Reimporting rows with the same `id` replaces them. The browser sends the parsed data only to the local server. Imported usage is saved in `~/.tallybeam/tallybeam.sqlite3`.
 
 Example:
 

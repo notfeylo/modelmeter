@@ -35,12 +35,13 @@ export function useUsage(range: string, provider: string, model: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
+  const foregroundId = useRef(0);
 
   const fetchData = useCallback(
-    async (force = false) => {
+    async (force = false, silent = false) => {
+      if (silent && foregroundId.current) return;
       const id = ++requestId.current;
-      setLoading(true);
-      setError(null);
+      if (!silent) { foregroundId.current = id; setLoading(true); setError(null); }
       try {
         if (force) {
           const scan = await fetch("/api/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -60,7 +61,8 @@ export function useUsage(range: string, provider: string, model: string) {
       } catch (err) {
         if (id === requestId.current) setError(err instanceof Error ? err.message : translate(getLocale(), "format.loadError"));
       } finally {
-        if (id === requestId.current) setLoading(false);
+        if (foregroundId.current === id) foregroundId.current = 0;
+        if (id === requestId.current && !silent) setLoading(false);
       }
     },
     [range, provider, model],
@@ -68,7 +70,10 @@ export function useUsage(range: string, provider: string, model: string) {
 
   useEffect(() => {
     fetchData();
-    return () => { requestId.current += 1; };
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") fetchData(false, true); }, 30_000);
+    const onFocus = () => { if (document.visibilityState === "visible") fetchData(false, true); };
+    window.addEventListener("focus", onFocus);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", onFocus); requestId.current += 1; };
   }, [fetchData]);
 
   return { data, loading, error, refresh: () => fetchData(true) };

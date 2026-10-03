@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { HeatmapPayload, MetricKey } from "@/types";
 import { formatMetricValue, formatDateLabel } from "@/lib/format";
 import { useLocale, type Locale } from "@/lib/i18n";
@@ -129,7 +129,21 @@ const CELL_CLASS =
 export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
   const { locale, t } = useLocale();
   const { granularity, data } = heatmap;
-  const isHourly = granularity === "hourly";
+  const [viewMode, setViewMode] = useState<"hourly" | "daily">("hourly");
+  const isHourly = granularity === "hourly" && viewMode === "hourly";
+  const drag = useRef<{ x: number; left: number } | null>(null);
+  const dragScroll = {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      drag.current = { x: event.clientX, left: event.currentTarget.scrollLeft };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (drag.current) event.currentTarget.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
+    },
+    onPointerUp: () => { drag.current = null; },
+    onPointerCancel: () => { drag.current = null; },
+  };
 
   // ── Hourly view: place the 12 two-hour points per day into rows ──────
   const hourlyView = useMemo(() => {
@@ -181,8 +195,7 @@ export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
 
   // ── Calendar view (daily): week × weekday, Monday-start ───────────────
   const calendarView = useMemo(() => {
-    const daily = data.filter((d) => !HOURLY_RE.test(d.date));
-    if (!daily.length) {
+    if (!data.length) {
       return {
         weeks: [] as DayCell[][],
         monthLabels: [] as string[],
@@ -192,10 +205,17 @@ export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
       };
     }
 
-    const valueMap = new Map<string, number>();
-    for (const d of daily) {
-      valueMap.set(d.date, (d as Record<MetricKey, number>)[metric] || 0);
+    const aggregated = new Map<string, { value: number; input: number; cacheRead: number; cacheWrite: number }>();
+    for (const d of data) {
+      const date = d.date.slice(0, 10);
+      const row = aggregated.get(date) || { value: 0, input: 0, cacheRead: 0, cacheWrite: 0 };
+      row.value += (d as Record<MetricKey, number>)[metric] || 0;
+      row.input += d.input || 0;
+      row.cacheRead += d.cache_read || 0;
+      row.cacheWrite += d.cache_write || 0;
+      aggregated.set(date, row);
     }
+    const valueMap = new Map([...aggregated].map(([date, row]) => [date, metric === "cache_hit_rate" ? computeHitRate(row.input, row.cacheRead, row.cacheWrite) : row.value]));
 
     const sorted = [...valueMap.keys()].sort();
     const minDate = new Date(`${sorted[0]}T00:00:00`);
@@ -306,6 +326,10 @@ export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
         <CardDescription className="text-xs">
           {t("chart.heatmapDesc", { metric: t(`metric.${metric}`) })}
         </CardDescription>
+        <div className="mt-2 flex gap-1" role="group" aria-label="Heatmap view">
+          <button type="button" disabled={granularity !== "hourly"} aria-pressed={isHourly} onClick={() => setViewMode("hourly")} className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40 aria-pressed:border-primary/40 aria-pressed:bg-primary/15 aria-pressed:text-primary">2-hour</button>
+          <button type="button" aria-pressed={!isHourly} onClick={() => setViewMode("daily")} className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground aria-pressed:border-primary/40 aria-pressed:bg-primary/15 aria-pressed:text-primary">Daily</button>
+        </div>
       </CardHeader>
       <CardContent>
         <TooltipProvider delayDuration={120}>
@@ -315,6 +339,7 @@ export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
               maxValue={maxValue}
               metric={metric}
               locale={locale}
+              dragScroll={dragScroll}
             />
           ) : (
             <CalendarGrid
@@ -324,6 +349,7 @@ export function HeatmapChart({ heatmap, metric, loading }: HeatmapChartProps) {
               maxValue={maxValue}
               metric={metric}
               locale={locale}
+              dragScroll={dragScroll}
             />
           )}
         </TooltipProvider>
@@ -367,9 +393,10 @@ interface HourlyGridProps {
   maxValue: number;
   metric: MetricKey;
   locale: Locale;
+  dragScroll: { onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void; onPointerUp: () => void; onPointerCancel: () => void };
 }
 
-function HourlyGrid({ columns, maxValue, metric, locale }: HourlyGridProps) {
+function HourlyGrid({ columns, maxValue, metric, locale, dragScroll }: HourlyGridProps) {
   const dayCount = columns.length;
   const size = hourlyCellSize(dayCount);
   const gap = 3;
@@ -382,7 +409,7 @@ function HourlyGrid({ columns, maxValue, metric, locale }: HourlyGridProps) {
   const showRowLabel = (blockIndex: number) => blockIndex % 2 === 0;
 
   return (
-    <div className="heatmap-scroll overflow-x-auto pb-1">
+    <div className="heatmap-scroll cursor-grab overflow-x-auto pb-1 active:cursor-grabbing" {...dragScroll}>
       <div
         className="mx-auto grid w-fit"
         style={{
@@ -498,6 +525,7 @@ interface CalendarGridProps {
   maxValue: number;
   metric: MetricKey;
   locale: Locale;
+  dragScroll: HourlyGridProps["dragScroll"];
 }
 
 function CalendarGrid({
@@ -507,6 +535,7 @@ function CalendarGrid({
   maxValue,
   metric,
   locale,
+  dragScroll,
 }: CalendarGridProps) {
   const weekCount = weeks.length;
   const size = calendarCellSize(weekCount);
@@ -517,7 +546,7 @@ function CalendarGrid({
   const gridTemplateRows = `${monthH}px repeat(7, ${size}px)`;
 
   return (
-    <div className="heatmap-scroll overflow-x-auto pb-1">
+    <div className="heatmap-scroll cursor-grab overflow-x-auto pb-1 active:cursor-grabbing" {...dragScroll}>
       <div
         className="mx-auto grid w-fit"
         style={{

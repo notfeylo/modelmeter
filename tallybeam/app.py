@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import sys
 import sqlite3
 import threading
 import time
@@ -17,6 +18,9 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .collector import scan, source_signature, timestamp, number
+from .discovery import discover_models, discover_obsidian_vaults, link_vaults_to_agent_sessions
+from .intelligence import recorded_facts, grounded_answer, ask_local_model, neural_usage_forecast
+from .claude_statusline import read_snapshot
 from .usage import usage_payload, cache_miss_sessions, cache_miss_detail, provider_name
 
 DATA = Path.home() / ".tallybeam"
@@ -25,6 +29,8 @@ CONFIG = DATA / "config.json"
 SOURCE_CACHE = DATA / "source-cache.sqlite3"
 lock = threading.Lock()
 cache = {"at": 0, "signature": None, "events": [], "connections": [], "limits": None}
+inventory_cache = {"at": 0, "data": None}
+inventory_lock = threading.Lock()
 
 
 def config():
@@ -88,6 +94,52 @@ def refresh(force=False):
         return dict(cache)
 
 
+def inventory(force=False):
+    with inventory_lock:
+        if force or inventory_cache["data"] is None or time.monotonic() - inventory_cache["at"] > 60:
+            inventory_cache["data"] = {"models": discover_models(), "vaults": link_vaults_to_agent_sessions(discover_obsidian_vaults()),
+                                       "note": "Installed models and vaults do not provide token usage or account limits"}
+            inventory_cache["at"] = time.monotonic()
+        return inventory_cache["data"]
+
+
+def limit_statuses(state):
+    latest = {}
+    for event in state["events"]:
+        name = provider_name(event)
+        if name in ("Ollama", "LM Studio", "Hugging Face", "OpenCode"):
+            continue
+        if name not in latest or event["timestamp"] > latest[name]["timestamp"]:
+            latest[name] = event
+    result = []
+    claude = read_snapshot()
+    if claude and "Anthropic" not in latest:
+        latest["Anthropic"] = {"model": claude["model"], "timestamp": claude["recorded_at"], "source": "Claude Code"}
+    for name, event in sorted(latest.items()):
+        row = {"provider": name, "model": event["model"], "recorded_at": event["timestamp"],
+               "used_percent": None, "resets_at": None, "status": "Limit not reported by local source"}
+        if name == "OpenAI" and event.get("source") == "Codex CLI" and state["limits"]:
+            window = state["limits"].get("primary") or {}
+            if isinstance(window.get("used_percent"), (int, float)):
+                row.update(used_percent=window["used_percent"], resets_at=window.get("resets_at"),
+                           recorded_at=state["limits"].get("recorded_at"), status="Recorded Codex 5h window")
+        if name == "Anthropic" and claude:
+            window = claude["windows"].get("five_hour") or {}
+            if isinstance(window.get("used_percent"), (int, float)):
+                row.update(model=claude["model"], used_percent=window["used_percent"],
+                           resets_at=window.get("resets_at"), recorded_at=claude["recorded_at"],
+                           status="Recorded Claude Code 5h window")
+        result.append(row)
+    return result
+
+
+def claude_bridge_command():
+    if getattr(sys, "frozen", False):
+        path = Path(sys.executable).parent.parent / "statusline" / "ModelmeterStatusline.exe"
+        return f'"{path}"'
+    return "python -m tallybeam.claude_statusline"
+
+
 def overview(days=30, provider="all"):
     state = refresh()
     now = datetime.now(timezone.utc)
@@ -122,6 +174,7 @@ def overview(days=30, provider="all"):
                  "events": sum(provider_name(e) == "Antigravity" for e in state["events"])}],
             "customPaths": configured_paths(config()),
             "codex_limits": state["limits"],
+            "claude_limits": read_snapshot(), "claude_bridge_command": claude_bridge_command(),
             "sessions": sessions(events)[:30]}
 
 
@@ -167,7 +220,16 @@ class Handler(BaseHTTPRequestHandler):
             provider = params.get("provider", ["all"])[0][:80]
             return self.respond(usage_payload(refresh()["events"], value, model, provider))
         if uri.path == "/api/limits":
-            return self.respond({"codex": refresh()["limits"]})
+            state = refresh()
+            return self.respond({"codex": state["limits"], "claude": read_snapshot(), "providers": limit_statuses(state)})
+        if uri.path == "/api/inventory":
+            params = parse_qs(uri.query)
+            return self.respond(inventory(params.get("refresh", ["0"])[0] == "1"))
+        if uri.path == "/api/insights":
+            events = refresh()["events"]
+            facts = recorded_facts(events)
+            return self.respond({"forecast": neural_usage_forecast(events), "topEvidence": facts[:6],
+                                 "note": "Forecasts and explanations never change recorded usage totals"})
         if uri.path == "/api/cache-miss/sessions":
             params = parse_qs(uri.query)
             value = params.get("range", ["30"])[0]
@@ -238,6 +300,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/refresh":
             refresh(True)
             return self.respond({"ok": True})
+        if self.path == "/api/ask":
+            question = data.get("question") if isinstance(data, dict) else None
+            model = data.get("model") if isinstance(data, dict) else None
+            if not isinstance(question, str) or not question.strip() or len(question) > 300:
+                return self.respond({"error": "Ask a usage question under 300 characters"}, 400)
+            if model is not None and (not isinstance(model, str) or len(model) > 180 or
+                                      model not in {item["model"] for item in inventory()["models"] if item["provider"] == "Ollama"}):
+                return self.respond({"error": "Choose an installed Ollama model"}, 400)
+            facts = recorded_facts(refresh()["events"])
+            return self.respond(ask_local_model(question.strip(), facts, model) if model else grounded_answer(question.strip(), facts))
         if self.path == "/api/connections":
             enabled = data.get("enabled") if isinstance(data, dict) else None
             if not isinstance(enabled, list) or any(x not in ("claude", "codex", "gemini", "opencode") for x in enabled):
@@ -276,7 +348,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond({"error": f"Invalid row {i+1}"}, 400)
                 when = timestamp(row.get("timestamp"))
                 provider = str(row.get("provider", ""))[:40].strip()
-                if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other", "OpenAI", "Anthropic", "Google", "Antigravity", "xAI") or not when:
+                if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other", "OpenAI", "Anthropic", "Google", "Antigravity", "xAI", "Kimi", "Ollama", "LM Studio", "Hugging Face") or not when:
                     return self.respond({"error": f"Invalid provider or timestamp in row {i+1}"}, 400)
                 values = [number(row.get(k)) for k in ("input", "output", "cache_read", "cache_write")]
                 ident = str(row.get("id") or f"{provider}:{row.get('session')}:{when}:{i}")[:200]

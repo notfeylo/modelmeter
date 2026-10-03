@@ -1,12 +1,14 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import { CableIcon, UploadIcon } from "lucide-react";
+import { CableIcon, RefreshCwIcon, UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Connection = { id: string; name: string; path: string; enabled: boolean; detected: boolean; events: number };
 type LimitWindow = { used_percent?: number; window_minutes?: number; resets_at?: number };
 type CodexLimits = { primary?: LimitWindow; secondary?: LimitWindow; recorded_at?: string };
+type ClaudeLimits = { model: string; recorded_at: string; windows: { five_hour?: LimitWindow; seven_day?: LimitWindow } };
 type SourceId = "claude" | "codex" | "gemini" | "opencode";
+type LocalInventory = { models: { provider: string; model: string; state: string; evidence: string }[]; vaults: { name: string; path: string; status: string }[]; note: string };
 
 function parseCsv(source: string): Record<string, string>[] {
   const lines: string[][] = [];
@@ -26,17 +28,19 @@ function parseCsv(source: string): Record<string, string>[] {
   return lines.map((values, index) => Object.fromEntries(headers.map((key, i) => [key, values[i] || ""]).concat([["id", values[headers.indexOf("id")] || `csv-${index}-${values.join("|")}`]])));
 }
 
-export function ConnectionsDialog({ onChanged }: { onChanged: () => void }) {
+export function ConnectionsDialog({ onChanged, inventory, onInventoryChanged }: { onChanged: () => void; inventory: LocalInventory; onInventoryChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [limits, setLimits] = useState<CodexLimits | null>(null);
+  const [claudeLimits, setClaudeLimits] = useState<ClaudeLimits | null>(null);
+  const [claudeCommand, setClaudeCommand] = useState("");
   const [customPaths, setCustomPaths] = useState<Partial<Record<SourceId, string[]>>>({});
   const [pathSource, setPathSource] = useState<SourceId>("claude");
   const [newPath, setNewPath] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (open) fetch("/api/overview?days=1").then(r => r.json()).then(d => { setConnections(d.connections || []); setLimits(d.codex_limits || null); setCustomPaths(d.customPaths || {}); }).catch(() => setError("Could not load connections"));
+    if (open) fetch("/api/overview?days=1").then(r => r.json()).then(d => { setConnections(d.connections || []); setLimits(d.codex_limits || null); setClaudeLimits(d.claude_limits || null); setClaudeCommand(d.claude_bridge_command || ""); setCustomPaths(d.customPaths || {}); }).catch(() => setError("Could not load connections"));
   }, [open]);
   async function toggle(id: string) {
     const enabled = connections.filter(c => c.id !== id && c.enabled).map(c => c.id);
@@ -78,14 +82,31 @@ export function ConnectionsDialog({ onChanged }: { onChanged: () => void }) {
   return <>
     <Button onClick={() => setOpen(true)} variant="outline" size="sm" className="h-8 rounded-lg px-3"><CableIcon className="size-3.5" /><span className="text-xs">Connections</span></Button>
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-h-[85vh] overflow-auto sm:max-w-xl">
-        <DialogHeader><DialogTitle>Connections</DialogTitle><DialogDescription>Local session sources and usage imports. Subscription balances require provider supported access.</DialogDescription></DialogHeader>
-        <div className="grid gap-2">
+      <DialogContent className="connections-scroll max-h-[90vh] w-[min(900px,calc(100vw-24px))] max-w-none overflow-x-hidden overflow-y-auto overscroll-contain sm:max-w-[900px]">
+        <DialogHeader><DialogTitle>Connections & local models</DialogTitle><DialogDescription>Recorded usage, discovered model installs, and known source folders. Installed models alone do not provide token counts or subscription limits.</DialogDescription></DialogHeader>
+        <div className="grid gap-2 md:grid-cols-2">
           {connections.map(c => <div key={c.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
             <div className="min-w-0"><div className="text-sm font-semibold">{c.name}</div><div className="truncate text-xs text-muted-foreground" title={c.path}>{c.detected ? `${c.events.toLocaleString()} records` : "Source not found"} · {c.path}</div></div>
             {["claude", "codex", "gemini", "opencode"].includes(c.id) && <Button variant={c.enabled ? "default" : "outline"} size="sm" disabled={busy} onClick={() => toggle(c.id)}>{c.enabled ? "On" : "Off"}</Button>}
           </div>)}
         </div>
+        <section className="min-w-0 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">Installed local models <span className="text-muted-foreground">({inventory.models.length})</span></p><Button size="sm" variant="ghost" onClick={onInventoryChanged}><RefreshCwIcon className="size-3.5" /> Rescan</Button></div>
+          <p className="mt-1 text-xs text-muted-foreground">Read from local Ollama, LM Studio, and Hugging Face stores. A downloaded model is listed even when no token log exists.</p>
+          {inventory.models.length ? <div className="mt-3 grid max-h-44 gap-2 overflow-y-auto connections-scroll sm:grid-cols-2">{inventory.models.map(item => <div key={`${item.provider}:${item.model}`} className="min-w-0 rounded-md border bg-secondary/20 px-2 py-1.5 text-xs" title={`${item.evidence} · ${item.state}`}><span className="block text-muted-foreground">{item.provider} · {item.state}</span><span className="block truncate font-medium">{item.model}</span></div>)}</div> : <p className="mt-3 text-xs text-muted-foreground">No local models detected in supported stores.</p>}
+        </section>
+        <section className="min-w-0 rounded-lg border p-3">
+          <p className="text-sm font-semibold">Claude Code limits</p>
+          <p className="mt-1 text-xs text-muted-foreground">Claude Code can pass its reported 5-hour and weekly windows through a status line command. Configure this only if you do not already use a custom status line.</p>
+          {claudeLimits ? <p className="mt-2 text-xs">{claudeLimits.model} · 5h {claudeLimits.windows.five_hour ? `${claudeLimits.windows.five_hour.used_percent}% used` : "unavailable"} · 7d {claudeLimits.windows.seven_day ? `${claudeLimits.windows.seven_day.used_percent}% used` : "unavailable"} · recorded {new Date(claudeLimits.recorded_at).toLocaleString()}</p> : <p className="mt-2 text-xs text-muted-foreground">No recent Claude limit snapshot.</p>}
+          {claudeCommand && <div className="mt-2 flex min-w-0 items-center gap-2"><code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded border bg-background px-2 py-1 text-xs" title={claudeCommand}>{claudeCommand}</code><Button type="button" size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(claudeCommand).catch(() => setError("Could not copy command"))}>Copy command</Button></div>}
+          <p className="mt-1 text-xs text-muted-foreground">Use this as the `statusLine.command` in Claude Code settings. The companion saves limit percentages only. Existing status lines need manual integration.</p>
+        </section>
+        <section className="min-w-0 rounded-lg border p-3">
+          <p className="text-sm font-semibold">Obsidian vaults <span className="text-muted-foreground">({inventory.vaults.length})</span></p>
+          <p className="mt-1 text-xs text-muted-foreground">Vault paths are detected from Obsidian’s local registry. Notes are not read for token totals.</p>
+          {inventory.vaults.map(vault => <div key={vault.path} className="mt-2 min-w-0 rounded-md border bg-secondary/20 px-2 py-1.5 text-xs"><span className="block font-medium">{vault.name}</span><span className="block truncate text-muted-foreground" title={vault.path}>{vault.status} · {vault.path}</span></div>)}
+        </section>
         <div className="rounded-lg border p-3">
           <p className="text-sm font-semibold">Additional session folders</p>
           <p className="mt-1 text-xs text-muted-foreground">Modelmeter also checks supported tool home folders and their environment overrides. Add another folder if a tool stores its session logs elsewhere. Project files alone do not contain reliable token counts.</p>

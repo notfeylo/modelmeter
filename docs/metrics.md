@@ -13,4 +13,6 @@
 
 No machine learning or retrieval system is used to fill missing counters. Those methods cannot recover an exact token count from a file edit, prompt, or output artifact. The app reports recorded counts and labels the cache reuse calculation as an estimate.
 
+The optional Python insight panel uses aggregate counter retrieval for answers and a validated neural model for an advisory current-day forecast. Neither output is added to any measured total, quota, or heatmap bucket. See [local intelligence](intelligence.md).
+
 Seven-day trend data uses one-hour buckets with missing hours filled as zero. Longer trend ranges use daily buckets. The heatmap uses two-hour buckets through 90 days and daily buckets beyond that. Date buckets follow the computer's local timezone.
