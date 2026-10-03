@@ -39,9 +39,8 @@ export function ModelChart({ items, metric, loading }: ModelChartProps) {
   }, [items, metric]);
 
   const chartConfig = useMemo<ChartConfig>(() => {
-    const cfg: ChartConfig = {
-      value: { label: metric, color: BAR_GRADIENT_END },
-    };
+    const cfg: ChartConfig = Object.create(null);
+    cfg.value = { label: metric, color: BAR_GRADIENT_END };
     chartData.forEach((item) => {
       cfg[item.fullName] = { label: item.fullName };
     });

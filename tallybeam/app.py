@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import socket
 import sys
 import sqlite3
@@ -27,6 +29,7 @@ DATA = Path.home() / ".tallybeam"
 DB = DATA / "tallybeam.sqlite3"
 CONFIG = DATA / "config.json"
 SOURCE_CACHE = DATA / "source-cache.sqlite3"
+MAX_COUNTER = 9_007_199_254_740_991
 lock = threading.Lock()
 cache = {"at": 0, "signature": None, "events": [], "connections": [], "limits": None}
 inventory_cache = {"at": 0, "data": None}
@@ -35,6 +38,8 @@ inventory_lock = threading.Lock()
 
 def config():
     try:
+        if CONFIG.stat().st_size > 128_000:
+            raise ValueError("Configuration too large")
         data = json.loads(CONFIG.read_text(encoding="utf-8"))
         if isinstance(data, dict) and isinstance(data.get("enabled"), list):
             return data
@@ -73,11 +78,36 @@ def database():
     return db
 
 
+def import_counter(value):
+    """Reject malformed or unrepresentable CSV counters instead of silently changing totals."""
+    if value is None or value == "":
+        return 0
+    if isinstance(value, bool):
+        raise ValueError("Invalid token counter")
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, str) and re.fullmatch(r"[0-9]{1,16}", value.strip()):
+        result = int(value.strip())
+    else:
+        raise ValueError("Invalid token counter")
+    if result < 0 or result > MAX_COUNTER:
+        raise ValueError("Token counter is outside the supported range")
+    return result
+
+
 def imported():
     with closing(database()) as db:
         rows = db.execute("SELECT provider,model,timestamp,session,input,output,cache_read,cache_write FROM imported").fetchall()
-    return [dict(provider=r[0], model=r[1], timestamp=r[2], session=r[3], input=r[4], output=r[5],
-                 cache_read=r[6], cache_write=r[7], total=sum(r[4:8]), source="CSV import") for r in rows]
+    result = []
+    for row in rows:
+        when = timestamp(row[2])
+        if not when:
+            continue
+        values = [number(value) for value in row[4:8]]
+        result.append(dict(provider=row[0], model=row[1], timestamp=when, session=row[3],
+                           input=values[0], output=values[1], cache_read=values[2],
+                           cache_write=values[3], total=sum(values), source="CSV import"))
+    return result
 
 
 def refresh(force=False):
@@ -120,11 +150,15 @@ def limit_statuses(state):
                "used_percent": None, "resets_at": None, "status": "Limit not reported by local source"}
         if name == "OpenAI" and event.get("source") == "Codex CLI" and state["limits"]:
             window = state["limits"].get("primary") or {}
+            if not isinstance(window, dict):
+                window = {}
             if isinstance(window.get("used_percent"), (int, float)):
                 row.update(used_percent=window["used_percent"], resets_at=window.get("resets_at"),
                            recorded_at=state["limits"].get("recorded_at"), status="Recorded Codex 5h window")
         if name == "Anthropic" and claude:
             window = claude["windows"].get("five_hour") or {}
+            if not isinstance(window, dict):
+                window = {}
             if isinstance(window.get("used_percent"), (int, float)):
                 row.update(model=claude["model"], used_percent=window["used_percent"],
                            resets_at=window.get("resets_at"), recorded_at=claude["recorded_at"],
@@ -201,6 +235,19 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def allowed_request(self):
+        """Reject DNS rebinding and cross-site browser requests before reading local data."""
+        expected_host = f"127.0.0.1:{self.server.server_port}"
+        hosts = self.headers.get_all("Host", [])
+        origins = self.headers.get_all("Origin", [])
+        if (len(hosts) != 1 or hosts[0] != expected_host or len(origins) > 1 or
+                (origins and origins[0] != f"http://{expected_host}") or
+                self.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site") or
+                not self.path.startswith("/") or self.path.startswith("//") or len(self.path) > 2048):
+            self.respond({"error": "Invalid local request"}, 403)
+            return False
+        return True
+
     def respond(self, data, status=200):
         body = json.dumps(data, default=list).encode()
         self.send_response(status)
@@ -208,10 +255,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
+        if not self.allowed_request():
+            return
         uri = urlparse(self.path)
         if uri.path == "/api/usage":
             params = parse_qs(uri.query)
@@ -258,7 +310,10 @@ class Handler(BaseHTTPRequestHandler):
             provider = params.get("provider", ["all"])[0][:80]
             return self.respond(overview(days, provider))
         if uri.path == "/api/health":
-            return self.respond({"ok": True, "service": "tallybeam", "version": __version__})
+            result = {"ok": True, "service": "tallybeam", "version": __version__}
+            if getattr(self.server, "launch_nonce", None):
+                result["launch_nonce"] = self.server.launch_nonce
+            return self.respond(result)
         if uri.path == "/api/session":
             params = parse_qs(uri.query)
             provider = params.get("provider", [""])[0]
@@ -267,10 +322,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({"error": "Provider and session required"}, 400)
             events = sorted((e for e in refresh()["events"] if e["provider"] == provider and e["session"] == session_id), key=lambda e: e["timestamp"])
             return self.respond({"provider": provider, "session": session_id, "events": events[:5000]})
-        name = "index.html" if uri.path == "/" else uri.path.lstrip("/")
-        if not (name == "index.html" or name == "logo.svg" or (name.startswith("assets/") and "/" not in name[7:])):
+        name = "index.html" if uri.path == "/" else uri.path.removeprefix("/")
+        root = files("tallybeam") / "static"
+        if name in ("index.html", "logo.svg"):
+            resource = root / name
+        elif name.startswith("assets/") and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,160}\.(?:js|css|woff2|svg)", name[7:]):
+            resource = root / "assets" / name[7:]
+        else:
             return self.respond({"error": "Not found"}, 404)
-        resource = files("tallybeam") / "static" / name
         if not resource.is_file():
             return self.respond({"error": "Not found"}, 404)
         body = resource.read_bytes()
@@ -279,20 +338,28 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime + "; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
     def do_POST(self):
-        origin = self.headers.get("Origin")
-        host = self.headers.get("Host")
-        if origin and origin != "http://" + host:
-            return self.respond({"error": "Invalid origin"}, 403)
+        if not self.allowed_request():
+            return
+        if self.headers.get("Transfer-Encoding") or len(self.headers.get_all("Content-Length", [])) != 1:
+            return self.respond({"error": "Content length required"}, 400)
         if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
             return self.respond({"error": "JSON required"}, 415)
-        size = number(self.headers.get("Content-Length"))
+        try:
+            size = int(self.headers["Content-Length"])
+        except (ValueError, OverflowError):
+            return self.respond({"error": "Invalid content length"}, 400)
         if size > 2_000_000:
             return self.respond({"error": "Request too large"}, 413)
+        if size <= 0:
+            return self.respond({"error": "Empty request"}, 400)
         try:
             data = json.loads(self.rfile.read(size))
         except ValueError:
@@ -350,7 +417,10 @@ class Handler(BaseHTTPRequestHandler):
                 provider = str(row.get("provider", ""))[:40].strip()
                 if provider not in ("Claude", "Codex", "Gemini", "Grok", "OpenCode", "Other", "OpenAI", "Anthropic", "Google", "Antigravity", "xAI", "Kimi", "Ollama", "LM Studio", "Hugging Face") or not when:
                     return self.respond({"error": f"Invalid provider or timestamp in row {i+1}"}, 400)
-                values = [number(row.get(k)) for k in ("input", "output", "cache_read", "cache_write")]
+                try:
+                    values = [import_counter(row.get(k)) for k in ("input", "output", "cache_read", "cache_write")]
+                except ValueError:
+                    return self.respond({"error": f"Invalid token counter in row {i+1}"}, 400)
                 ident = str(row.get("id") or f"{provider}:{row.get('session')}:{when}:{i}")[:200]
                 rows.append((ident, provider, str(row.get("model") or "Unknown")[:100], when,
                              str(row.get("session") or "Imported")[:100], *values))
@@ -366,6 +436,13 @@ class LocalHTTPServer(ThreadingHTTPServer):
     """Bind exclusively so a second launch cannot silently share the port."""
 
     allow_reuse_address = False
+    daemon_threads = True
+    request_queue_size = 32
+
+    def get_request(self):
+        connection, address = super().get_request()
+        connection.settimeout(10)
+        return connection, address
 
     def server_bind(self):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
@@ -379,6 +456,7 @@ def main():
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     server = LocalHTTPServer(("127.0.0.1", args.port), Handler)
+    server.launch_nonce = os.environ.get("MODELMETER_LAUNCH_NONCE")
     print(f"Tallybeam listening at http://127.0.0.1:{args.port}", flush=True)
     if not args.no_browser:
         webbrowser.open(f"http://127.0.0.1:{args.port}")

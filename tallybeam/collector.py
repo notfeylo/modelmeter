@@ -7,7 +7,7 @@ import subprocess
 import sqlite3
 from hashlib import blake2b
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HOME = Path.home()
@@ -52,20 +52,27 @@ def source_roots(source, extras=None):
 
 def number(value):
     try:
-        return max(0, int(value or 0))
-    except (ValueError, TypeError):
+        result = int(value or 0)
+        return result if 0 <= result <= 9_007_199_254_740_991 else 0
+    except (ValueError, TypeError, OverflowError):
         return 0
 
 
 def timestamp(value):
+    parsed = None
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, timezone.utc).isoformat()
-    if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+            parsed = datetime.fromtimestamp(value, timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            return None
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
         except ValueError:
-            pass
-    return None
+            return None
+    if parsed is None or not datetime(2018, 1, 1, tzinfo=timezone.utc) <= parsed <= datetime.now(timezone.utc) + timedelta(days=1):
+        return None
+    return parsed.isoformat()
 
 
 def event(provider, model, when, session, usage, source):
@@ -196,7 +203,11 @@ def _scan_claude_file(path):
         if row.get("type") != "assistant":
             continue
         msg = row.get("message") or {}
+        if not isinstance(msg, dict):
+            continue
         usage = msg.get("usage") or {}
+        if not isinstance(usage, dict):
+            continue
         key = msg.get("id") or row.get("requestId") or row.get("uuid")
         item = event("Claude", msg.get("model"), row.get("timestamp"), row.get("sessionId") or path.stem, usage, "Claude Code")
         if item and key:
@@ -209,7 +220,7 @@ def _scan_claude_file(path):
 def scan_claude(root, file_cache=None):
     seen = {}
     for path in source_files(root, ".jsonl"):
-        batch = file_cache.read("claude-v2", path, _scan_claude_file) if file_cache else _scan_claude_file(path)
+        batch = file_cache.read("claude-v3", path, _scan_claude_file) if file_cache else _scan_claude_file(path)
         for item in batch:
             key = (item["session"], item["_message_id"])
             if key not in seen or item["total"] >= seen[key]["total"]:
@@ -223,6 +234,8 @@ def _scan_codex_file(path):
     session, model = path.stem, "Unknown model"
     for row in json_lines(path):
         payload = row.get("payload") or {}
+        if not isinstance(payload, dict):
+            continue
         if row.get("type") == "session_meta":
             session = (payload.get("id") or session)
         if row.get("type") == "turn_context":
@@ -230,11 +243,15 @@ def _scan_codex_file(path):
         if payload.get("type") != "token_count":
             continue
         limits = payload.get("rate_limits") or {}
+        if not isinstance(limits, dict):
+            limits = {}
         if limits and (not latest_limit or str(row.get("timestamp", "")) > latest_limit[0]):
             latest_limit = (str(row.get("timestamp", "")), limits)
         info = payload.get("info") or {}
+        if not isinstance(info, dict):
+            continue
         total = info.get("total_token_usage") or {}
-        if not total:
+        if not isinstance(total, dict) or not total:
             continue
         fields = ("input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens")
         if previous is None or any(number(total.get(k)) < number(previous.get(k)) for k in fields):
@@ -251,7 +268,7 @@ def _scan_codex_file(path):
 def scan_codex(root, file_cache=None):
     results, latest_limit = [], None
     for path in source_files(root, ".jsonl"):
-        batch, limit = (file_cache.read("codex-v3", path, _scan_codex_file)
+        batch, limit = (file_cache.read("codex-v4", path, _scan_codex_file)
                         if file_cache else _scan_codex_file(path))
         results.extend(batch)
         if limit and (not latest_limit or limit[0] > latest_limit[0]):
@@ -265,11 +282,16 @@ def _scan_gemini_file(path):
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return results
+    if not isinstance(data, dict) or not isinstance(data.get("messages"), list):
+        return results
     for message in data.get("messages", []):
-        if message.get("type") != "gemini":
+        if not isinstance(message, dict) or message.get("type") != "gemini":
+            continue
+        tokens = message.get("tokens") or {}
+        if not isinstance(tokens, dict):
             continue
         item = event("Gemini", message.get("model"), message.get("timestamp"), data.get("sessionId") or path.stem,
-                     message.get("tokens") or {}, "Gemini CLI")
+                     tokens, "Gemini CLI")
         if item:
             results.append(item)
     return results
@@ -279,7 +301,7 @@ def scan_gemini(root, file_cache=None):
     results = []
     for path in source_files(root, ".json"):
         if path.name.startswith("session-"):
-            results.extend(file_cache.read("gemini-v1", path, _scan_gemini_file) if file_cache else _scan_gemini_file(path))
+            results.extend(file_cache.read("gemini-v2", path, _scan_gemini_file) if file_cache else _scan_gemini_file(path))
     return results
 
 

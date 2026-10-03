@@ -36,18 +36,20 @@ fn free_port() -> Result<u16, Box<dyn Error>> {
     Ok(listener.local_addr()?.port())
 }
 
-fn backend_responds(port: u16) -> bool {
+fn backend_responds(port: u16, launch_nonce: &str) -> bool {
     let address = ([127, 0, 0, 1], port).into();
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(250)) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-    if stream.write_all(b"GET /api/health HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").is_err() {
+    let request = format!("GET /api/health HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }
     let mut response = String::new();
     stream.read_to_string(&mut response).is_ok()
         && response.contains("\"service\": \"tallybeam\"")
+        && response.contains(&format!("\"launch_nonce\": \"{launch_nonce}\""))
 }
 
 fn stop_backend(app: &tauri::AppHandle) {
@@ -68,11 +70,16 @@ fn main() {
         .manage(Backend(Mutex::new(None)))
         .setup(|app| {
             let port = free_port()?;
+            let mut random = [0u8; 32];
+            getrandom::fill(&mut random)
+                .map_err(|error| std::io::Error::other(format!("launch nonce unavailable: {error}")))?;
+            let launch_nonce: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
             let mut command = Command::new(backend_path()?);
             command
                 .arg("--no-browser")
                 .arg("--port")
                 .arg(port.to_string())
+                .env("MODELMETER_LAUNCH_NONCE", &launch_nonce)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
@@ -86,7 +93,7 @@ fn main() {
 
             let deadline = Instant::now() + Duration::from_secs(20);
             while Instant::now() < deadline {
-                if backend_responds(port) {
+                if backend_responds(port, &launch_nonce) {
                     break;
                 }
                 let exited = {
@@ -104,7 +111,7 @@ fn main() {
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
-            if !backend_responds(port) {
+            if !backend_responds(port, &launch_nonce) {
                 stop_backend(app.handle());
                 return Err("Python backend did not become ready".into());
             }

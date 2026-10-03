@@ -56,7 +56,7 @@ export function ProviderChart({ items, metric, loading }: ProviderChartProps) {
   const total = chartData.reduce((sum, item) => sum + item.value, 0);
 
   const chartConfig = useMemo<ChartConfig>(() => {
-    const cfg: ChartConfig = {};
+    const cfg: ChartConfig = Object.create(null);
     chartData.forEach((item) => {
       cfg[item.name] = { label: item.name, color: item.fill };
     });

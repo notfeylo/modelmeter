@@ -166,7 +166,7 @@ export function CacheHitRateChart({ trends, loading, onPointClick }: CacheHitRat
       return { key, provider: tr.provider, model: tr.model, color, totalTokens: tr.totalTokens, dayMap };
     });
 
-    const cfg: ChartConfig = {};
+    const cfg: ChartConfig = Object.create(null);
     for (const s of seriesData) {
       cfg[s.key] = { label: s.key, color: s.color };
     }

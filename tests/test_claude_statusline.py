@@ -27,6 +27,17 @@ class ClaudeStatuslineTests(unittest.TestCase):
             self.assertFalse(path.exists())
             self.assertFalse(capture({"rate_limits": {"five_hour": {"used_percentage": 4, "resets_at": 1}}}, path))
 
+    def test_malformed_saved_limits_are_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "limits.json"
+            recorded = datetime.now(timezone.utc).isoformat()
+            for data in ({"recorded_at": recorded, "model": "Claude", "windows": {"five_hour": "bad"}},
+                         {"recorded_at": recorded, "model": "Claude", "windows": {"five_hour": {"used_percent": 900, "resets_at": 1}}},
+                         {"recorded_at": recorded, "model": "Claude", "windows": []}):
+                with self.subTest(data=data):
+                    path.write_text(json.dumps(data), encoding="utf-8")
+                    self.assertIsNone(read_snapshot(path))
+
 
 if __name__ == "__main__":
     unittest.main()

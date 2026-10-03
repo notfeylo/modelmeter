@@ -39,7 +39,7 @@ function buildHalfConfig(
   summary: MetricSummary,
   t: (key: string) => string,
 ): HalfConfig {
-  const cfg: ChartConfig = {};
+  const cfg: ChartConfig = Object.create(null);
   const data: SliceData[] = [];
 
   let total = 0;

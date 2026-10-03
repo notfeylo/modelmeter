@@ -105,6 +105,8 @@ Grok,grok-4,2026-10-01T12:00:00Z,1000,300,0,0,project-a,request-1
 
 ## Privacy
 
+For the local server's security boundaries, supported versions, and private vulnerability reporting, see [security design](docs/security.md) and the [security policy](SECURITY.md).
+
 - The server binds to `127.0.0.1` only. There is no cloud account or telemetry.
 - The collector parses local session files and stores only normalized usage metadata in a local SQLite cache (`~/.tallybeam/source-cache.sqlite3`) to speed repeat launches. It never saves prompts or responses in the cache or serves them to the browser.
 - OpenCode databases are opened read-only. The session detail shows usage counters and timing, never message content.

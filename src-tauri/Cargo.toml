@@ -1,6 +1,6 @@
 [package]
 name = "tallybeam-desktop"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 build = "build.rs"
 
@@ -12,5 +12,6 @@ path = "src/main.rs"
 tauri-build = "=2.7.1"
 
 [dependencies]
+getrandom = "=0.3.4"
 tauri = { version = "=2.12.1", features = [] }
 tauri-plugin-single-instance = "=2.4.5"

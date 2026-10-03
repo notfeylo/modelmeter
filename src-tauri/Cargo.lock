@@ -3272,8 +3272,9 @@ dependencies = [
 
 [[package]]
 name = "tallybeam-desktop"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
+ "getrandom 0.3.4",
  "tauri",
  "tauri-build",
  "tauri-plugin-single-instance",

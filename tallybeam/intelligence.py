@@ -13,6 +13,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 
 from .usage import provider_name
+from .discovery import loopback_opener
 
 
 def _recent(events, days=90):
@@ -99,7 +100,7 @@ def ask_local_model(question, facts, model):
     request = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=body,
                                      headers={"Content-Type": "application/json"}, method="POST")
     try:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        opener = loopback_opener()
         with opener.open(request, timeout=20) as response:
             data = json.loads(response.read(50_000))
         answer = str(data.get("response") or "").strip()[:3000]

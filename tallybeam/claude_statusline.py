@@ -41,11 +41,29 @@ def capture(payload, destination=SNAPSHOT):
 
 def read_snapshot(path=SNAPSHOT):
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        recorded = datetime.fromisoformat(data["recorded_at"])
-        if (datetime.now(timezone.utc) - recorded).total_seconds() > 600:
+        if path.stat().st_size > 64_000:
             return None
-        return data if isinstance(data.get("windows"), dict) else None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("windows"), dict):
+            return None
+        recorded = datetime.fromisoformat(data["recorded_at"])
+        age = (datetime.now(timezone.utc) - recorded).total_seconds()
+        if not -60 <= age <= 600:
+            return None
+        windows = data["windows"]
+        for window in windows.values():
+            if not isinstance(window, dict):
+                return None
+            percent = window.get("used_percent")
+            reset = window.get("resets_at")
+            if (not isinstance(percent, (int, float)) or isinstance(percent, bool) or
+                    not math.isfinite(percent) or not 0 <= percent <= 100 or
+                    not isinstance(reset, (int, float)) or isinstance(reset, bool) or
+                    not math.isfinite(reset)):
+                return None
+        if not isinstance(data.get("model"), str) or len(data["model"]) > 120:
+            return None
+        return data
     except (OSError, ValueError, KeyError, TypeError):
         return None
 

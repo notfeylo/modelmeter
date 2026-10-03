@@ -55,7 +55,10 @@ function ChartContainer({
   }
 }) {
   const uniqueId = React.useId()
-  const chartId = `chart-${id ?? uniqueId.replace(/:/g, "")}`
+  const safeId = id && /^[A-Za-z0-9_-]+$/.test(id)
+    ? id
+    : uniqueId.replace(/[^A-Za-z0-9_-]/g, "")
+  const chartId = `chart-${safeId}`
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -80,36 +83,35 @@ function ChartContainer({
 }
 
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(
-    ([, config]) => config.theme ?? config.color
+  const safeColor = (value: string | undefined) =>
+    value && (/^#[0-9a-fA-F]{3,8}$/.test(value) || /^var\(--[A-Za-z0-9-]+\)$/.test(value))
+      ? value
+      : null
+  const colorConfig = Object.entries(config).filter(([key, entry]) =>
+    /^[A-Za-z_][A-Za-z0-9_-]*$/.test(key) &&
+    Object.keys(THEMES).some(theme => safeColor(entry.theme?.[theme as keyof typeof THEMES] ?? entry.color))
   )
 
   if (!colorConfig.length) {
     return null
   }
 
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
+  const stylesheet = Object.entries(THEMES)
+    .map(([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const color = safeColor(
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
       itemConfig.color
+    )
     return color ? `  --color-${key}: ${color};` : null
   })
   .join("\n")}
 }
-`
-          )
-          .join("\n"),
-      }}
-    />
-  )
+`).join("\n")
+
+  return <style>{stylesheet}</style>
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip
@@ -154,7 +156,7 @@ function ChartTooltipContent({
     const itemConfig = getPayloadConfigFromPayload(config, item, key)
     const value =
       !labelKey && typeof label === "string"
-        ? (config[label]?.label ?? label)
+        ? (Object.hasOwn(config, label) ? config[label]?.label ?? label : label)
         : itemConfig?.label
 
     if (labelFormatter) {
@@ -358,7 +360,9 @@ function getPayloadConfigFromPayload(
     ] as string
   }
 
-  return configLabelKey in config ? config[configLabelKey] : config[key]
+  return Object.hasOwn(config, configLabelKey)
+    ? config[configLabelKey]
+    : Object.hasOwn(config, key) ? config[key] : undefined
 }
 
 export {

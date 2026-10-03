@@ -10,6 +10,16 @@ from pathlib import Path
 MAX_MODELS = 500
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def loopback_opener():
+    """Never follow a local model service's redirect to another origin."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
 def _children(path):
     try:
         return list(islice(path.iterdir(), MAX_MODELS))
@@ -26,7 +36,7 @@ def _modified(path):
 
 def _json_from_loopback(url):
     try:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        opener = loopback_opener()
         with opener.open(url, timeout=0.35) as response:
             if response.status != 200 or int(response.headers.get("Content-Length", "0")) > 2_000_000:
                 return None
@@ -112,11 +122,15 @@ def discover_obsidian_vaults(home=None, environ=None):
     env = os.environ if environ is None else environ
     config = Path(env.get("APPDATA") or home / ".config") / "obsidian" / "obsidian.json"
     try:
+        if config.stat().st_size > 1_000_000:
+            return []
         registered = json.loads(config.read_text(encoding="utf-8")).get("vaults", {})
     except (OSError, ValueError, AttributeError):
         return []
+    if not isinstance(registered, dict):
+        return []
     result = []
-    for row in list(registered.values())[:100]:
+    for row in islice(registered.values(), 100):
         if not isinstance(row, dict) or not row.get("path"):
             continue
         path = Path(row["path"])

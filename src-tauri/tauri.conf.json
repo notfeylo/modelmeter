@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Modelmeter",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "identifier": "com.notfeylo.tallybeam",
   "build": {
     "frontendDist": "../tallybeam/static"

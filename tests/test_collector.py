@@ -45,6 +45,16 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(event["total"], 115)
             self.assertEqual(event["cache_read"], 20)
 
+    def test_malformed_local_records_are_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "claude.jsonl").write_text(json.dumps({"type": "assistant", "message": ["unexpected"]}) + "\n", encoding="utf-8")
+            (root / "codex.jsonl").write_text(json.dumps({"type": "event_msg", "payload": ["unexpected"]}) + "\n", encoding="utf-8")
+            (root / "session-bad.json").write_text(json.dumps({"messages": ["unexpected"]}), encoding="utf-8")
+            self.assertEqual(scan_claude(root), [])
+            self.assertEqual(scan_codex(root), ([], None))
+            self.assertEqual(scan_gemini(root), [])
+
     def test_cached_source_updates_when_file_changes_and_deduplicates_copies(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
